@@ -4,14 +4,17 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+
+	"kms-server/internal/search"
 )
 
 type Handler struct {
-	svc *Service
+	svc     *Service
+	indexer *search.Indexer
 }
 
-func NewHandler(svc *Service) *Handler {
-	return &Handler{svc: svc}
+func NewHandler(svc *Service, indexer *search.Indexer) *Handler {
+	return &Handler{svc: svc, indexer: indexer}
 }
 
 func (h *Handler) RegisterRoutes(r *gin.RouterGroup) {
@@ -22,8 +25,8 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup) {
 		notes.GET("/*path", h.Get)
 		notes.PUT("/*path", h.Update)
 		notes.DELETE("/*path", h.Delete)
-		notes.GET("/*path/history", h.History)
 	}
+	r.GET("/history/*path", h.History)
 }
 
 func (h *Handler) List(c *gin.Context) {
@@ -42,12 +45,14 @@ func (h *Handler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	note, err := h.svc.Create(c.Request.Context(), req)
+	n, err := h.svc.Create(c.Request.Context(), req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, note)
+	// Auto-index
+	h.indexNote(n)
+	c.JSON(http.StatusCreated, n)
 }
 
 func (h *Handler) Get(c *gin.Context) {
@@ -77,12 +82,14 @@ func (h *Handler) Update(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	note, err := h.svc.Update(c.Request.Context(), path, req)
+	n, err := h.svc.Update(c.Request.Context(), path, req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, note)
+	// Auto-index
+	h.indexNote(n)
+	c.JSON(http.StatusOK, n)
 }
 
 func (h *Handler) Delete(c *gin.Context) {
@@ -105,15 +112,35 @@ func (h *Handler) History(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "path required"})
 		return
 	}
-	path = path[1:]
-	// Remove /history suffix
-	if len(path) > 8 && path[len(path)-8:] == "/history" {
-		path = path[:len(path)-8]
-	}
+	path = path[1:] // remove leading /
 	commits, err := h.svc.GetHistory(c.Request.Context(), path)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"commits": commits})
+}
+
+func (h *Handler) indexNote(n *Note) {
+	if h.indexer == nil || n == nil {
+		return
+	}
+	idx := &search.IndexedNote{
+		ID:      n.ID,
+		Path:    n.Path,
+		Title:   n.Title,
+		Content: n.Content,
+		Type:    string(n.Type),
+		Status:  string(n.Status),
+		Tags:    n.Tags,
+		Summary: n.Summary,
+		Source:  n.Source,
+		SHA:     n.SHA,
+		Created: n.Created,
+		Updated: n.Updated,
+	}
+	if err := h.indexer.UpsertNote(idx); err != nil {
+		// Log but don't fail the request
+		return
+	}
 }

@@ -83,10 +83,10 @@ func migrate(db *sql.DB) error {
 			content LONGTEXT NOT NULL,
 			type VARCHAR(20) NOT NULL DEFAULT 'note',
 			status VARCHAR(20) NOT NULL DEFAULT 'seed',
-			tags TEXT DEFAULT '[]',
+			tags TEXT,
 			summary TEXT,
-			source VARCHAR(500) DEFAULT '',
-			sha VARCHAR(40) DEFAULT '',
+			source VARCHAR(500),
+			sha VARCHAR(40),
 			created DATETIME,
 			updated DATETIME,
 			INDEX idx_notes_type (type),
@@ -159,19 +159,34 @@ func (idx *Indexer) UpsertNote(note *IndexedNote) error {
 }
 
 func (idx *Indexer) Search(query string, filters SearchFilters, limit, offset int) ([]SearchResult, int, error) {
-	where := []string{"MATCH(notes.title, notes.content, notes.tags, notes.summary) AGAINST(? IN BOOLEAN MODE)"}
-	args := []interface{}{buildFTSQuery(query)}
+	q := strings.TrimSpace(query)
+	if q == "" {
+		return nil, 0, nil
+	}
+
+	// Build LIKE conditions for each word
+	words := strings.Fields(q)
+	var likeParts []string
+	var likeArgs []interface{}
+	for _, w := range words {
+		likeParts = append(likeParts, "(title LIKE ? OR content LIKE ? OR tags LIKE ? OR summary LIKE ?)")
+		pat := "%" + w + "%"
+		likeArgs = append(likeArgs, pat, pat, pat, pat)
+	}
+	where := []string{strings.Join(likeParts, " AND ")}
+	args := make([]interface{}, len(likeArgs))
+	copy(args, likeArgs)
 
 	if filters.Type != "" {
-		where = append(where, "notes.type = ?")
+		where = append(where, "type = ?")
 		args = append(args, filters.Type)
 	}
 	if filters.Status != "" {
-		where = append(where, "notes.status = ?")
+		where = append(where, "status = ?")
 		args = append(args, filters.Status)
 	}
 	for _, tag := range filters.Tags {
-		where = append(where, "notes.tags LIKE ?")
+		where = append(where, "tags LIKE ?")
 		args = append(args, "%"+tag+"%")
 	}
 
@@ -185,15 +200,13 @@ func (idx *Indexer) Search(query string, filters SearchFilters, limit, offset in
 
 	searchQuery := fmt.Sprintf(`
 		SELECT id, path, title, type, status, tags, summary,
-			   SUBSTRING(content, 1, 200) as snippet,
-			   MATCH(notes.title, notes.content, notes.tags, notes.summary) AGAINST(? IN BOOLEAN MODE) as score
+			   SUBSTRING(content, 1, 200) as snippet, 1.0 as score
 		FROM notes
 		WHERE %s
-		ORDER BY score DESC
+		ORDER BY updated DESC
 		LIMIT ? OFFSET ?
 	`, whereClause)
 
-	args = append([]interface{}{buildFTSQuery(query)}, args...)
 	args = append(args, limit, offset)
 
 	rows, err := idx.db.Query(searchQuery, args...)
@@ -253,7 +266,9 @@ func buildFTSQuery(input string) string {
 	words := strings.Fields(strings.TrimSpace(input))
 	parts := make([]string, 0, len(words))
 	for _, w := range words {
-		parts = append(parts, "+"+w+"*")
+		// ngram parser doesn't support +/- prefix operators or wildcards well
+		// Just pass the raw terms — ngram will tokenize them automatically
+		parts = append(parts, w)
 	}
 	return strings.Join(parts, " ")
 }

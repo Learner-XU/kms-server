@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rs/zerolog/log"
+
 	"kms-server/internal/gitea"
 	"kms-server/pkg/frontmatter"
 	"kms-server/pkg/id"
@@ -29,6 +31,9 @@ func (s *Service) Get(ctx context.Context, path string) (*Note, error) {
 	if err != nil {
 		return nil, err
 	}
+	if fm == nil {
+		return nil, fmt.Errorf("no frontmatter in %s", path)
+	}
 	tags := fm.Tags
 	if tags == nil {
 		tags = []string{}
@@ -41,8 +46,17 @@ func (s *Service) Get(ctx context.Context, path string) (*Note, error) {
 	// Extract inline links
 	inlineLinks := markdown.ExtractLinks(body)
 
+	noteID := fm.ID
+	needsWriteBack := false
+	if noteID == "" {
+		noteID = id.New()
+		fm.ID = noteID
+		needsWriteBack = true
+		log.Info().Str("path", path).Str("id", noteID).Msg("auto-generated note ID")
+	}
+
 	note := &Note{
-		ID:      fm.ID,
+		ID:      noteID,
 		Title:   fm.Title,
 		Path:    path,
 		Content: body,
@@ -60,11 +74,38 @@ func (s *Service) Get(ctx context.Context, path string) (*Note, error) {
 		note.Links = appendUnique(note.Links, l.Target)
 	}
 
-	if t, err := time.Parse(time.RFC3339, fm.Created); err == nil {
-		note.Created = t
+	// Flexible date parsing: try RFC3339, then date-only, then datetime
+	parsed := false
+	for _, layout := range []string{time.RFC3339, "2006-01-02", "2006-01-02 15:04:05"} {
+		if t, err := time.Parse(layout, fm.Created); err == nil {
+			note.Created = t
+			parsed = true
+			break
+		}
 	}
-	if t, err := time.Parse(time.RFC3339, fm.Updated); err == nil {
-		note.Updated = t
+	if !parsed {
+		note.Created = time.Now()
+	}
+	parsed = false
+	for _, layout := range []string{time.RFC3339, "2006-01-02", "2006-01-02 15:04:05"} {
+		if t, err := time.Parse(layout, fm.Updated); err == nil {
+			note.Updated = t
+			parsed = true
+			break
+		}
+	}
+	if !parsed {
+		note.Updated = note.Created
+	}
+
+	// Write back auto-generated ID (synchronous to avoid SHA conflicts)
+	if needsWriteBack {
+		newContent, err := frontmatter.Marshal(fm, body)
+		if err != nil {
+			log.Error().Err(err).Str("path", path).Msg("failed to marshal auto-generated ID")
+		} else if err := s.gitea.PutFile(context.Background(), path+".md", newContent, "auto: assign note ID", file.SHA); err != nil {
+			log.Error().Err(err).Str("path", path).Msg("failed to commit auto-generated ID")
+		}
 	}
 
 	return note, nil

@@ -17,7 +17,7 @@ func NewHandler(indexer *Indexer) *Handler {
 
 func (h *Handler) RegisterRoutes(r *gin.RouterGroup) {
 	r.GET("/search", h.Search)
-	r.GET("/notes/:id/backlinks", h.Backlinks)
+	r.GET("/backlinks/:id", h.Backlinks)
 }
 
 func (h *Handler) Search(c *gin.Context) {

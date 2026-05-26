@@ -1,7 +1,9 @@
 package config
 
 import (
+	"bufio"
 	"os"
+	"strings"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -36,6 +38,9 @@ func Load() *Config {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 
+	// Load .env file if present
+	loadEnvFile()
+
 	cfg := &Config{
 		Server: ServerConfig{
 			Port: getEnv("PORT", "8000"),
@@ -60,4 +65,30 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func loadEnvFile() {
+	f, err := os.Open(".env")
+	if err != nil {
+		return // no .env file, that's fine
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		val := strings.TrimSpace(parts[1])
+		// Only set if not already in environment
+		if os.Getenv(key) == "" {
+			os.Setenv(key, val)
+		}
+	}
 }
