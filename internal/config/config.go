@@ -1,0 +1,63 @@
+package config
+
+import (
+	"os"
+
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
+)
+
+type Config struct {
+	Server   ServerConfig
+	Gitea    GiteaConfig
+	MySQL    MySQLConfig
+	Webhook  WebhookConfig
+}
+
+type ServerConfig struct {
+	Port string
+}
+
+type GiteaConfig struct {
+	URL   string
+	Token string
+	Repo  string
+}
+
+type MySQLConfig struct {
+	DSN string
+}
+
+type WebhookConfig struct {
+	Secret string
+}
+
+func Load() *Config {
+	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+
+	cfg := &Config{
+		Server: ServerConfig{
+			Port: getEnv("PORT", "8000"),
+		},
+		Gitea: GiteaConfig{
+			URL:   getEnv("GITEA_URL", "http://localhost:3000"),
+			Token: getEnv("GITEA_TOKEN", ""),
+			Repo:  getEnv("GITEA_REPO", "xuzong/knowledge-vault"),
+		},
+		MySQL: MySQLConfig{
+			DSN: getEnv("MYSQL_DSN", "root:root@tcp(127.0.0.1:3306)/kms?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci"),
+		},
+		Webhook: WebhookConfig{
+			Secret: getEnv("WEBHOOK_SECRET", "kms-webhook-secret"),
+		},
+	}
+	return cfg
+}
+
+func getEnv(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
