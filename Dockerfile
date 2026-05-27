@@ -3,13 +3,12 @@ FROM golang:1.22-alpine AS builder
 
 WORKDIR /app
 
-# Cache dependencies
+# Copy source + vendor (no network needed)
 COPY go.mod go.sum ./
-RUN go mod download
-
-# Build
+COPY vendor/ vendor/
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o kms-server ./cmd/server/
+
+RUN CGO_ENABLED=0 GOOS=linux go build -mod=vendor -ldflags="-s -w" -o kms-server ./cmd/server/
 
 # ---- Runtime Stage ----
 FROM alpine:3.20

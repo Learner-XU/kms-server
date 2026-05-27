@@ -12,7 +12,7 @@ all: build
 
 build:
 	@mkdir -p $(BUILD_DIR)
-	go build -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(APP_NAME) ./cmd/server/
+	go build -mod=vendor -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(APP_NAME) ./cmd/server/
 	@echo "✅ Built $(BUILD_DIR)/$(APP_NAME)"
 
 # Build for all platforms
@@ -23,7 +23,7 @@ $(PLATFORMS):
 	$(eval GOARCH := $(word 2,$(subst /, ,$@)))
 	@mkdir -p $(BUILD_DIR)
 	@echo "📦 Building $(GOOS)/$(GOARCH)..."
-	@CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(APP_NAME)-$(GOOS)-$(GOARCH) ./cmd/server/
+	@CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -mod=vendor -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(APP_NAME)-$(GOOS)-$(GOARCH) ./cmd/server/
 	@echo "✅ $(BUILD_DIR)/$(APP_NAME)-$(GOOS)-$(GOARCH)"
 
 build-linux:
