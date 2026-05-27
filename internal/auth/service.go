@@ -1,8 +1,12 @@
 package auth
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"errors"
+	"fmt"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -13,9 +17,28 @@ type Service struct {
 }
 
 func NewService(db *sql.DB, jwtSecret string) *Service {
-	return &Service{
+	svc := &Service{
 		db:         db,
 		jwtManager: NewJWTManager(jwtSecret),
+	}
+	// Ensure refresh_tokens table exists
+	svc.migrateRefreshTokens()
+	return svc
+}
+
+func (s *Service) migrateRefreshTokens() {
+	query := `CREATE TABLE IF NOT EXISTS refresh_tokens (
+		id         BIGINT AUTO_INCREMENT PRIMARY KEY,
+		user_id    BIGINT NOT NULL,
+		jti        VARCHAR(64) NOT NULL,
+		expires_at DATETIME NOT NULL,
+		revoked    BOOLEAN NOT NULL DEFAULT FALSE,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE KEY uq_jti (jti),
+		INDEX idx_user_revoked (user_id, revoked)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+	if _, err := s.db.Exec(query); err != nil {
+		panic(fmt.Sprintf("failed to create refresh_tokens table: %v", err))
 	}
 }
 
@@ -28,7 +51,8 @@ func (s *Service) Register(req *RegisterRequest) (*User, error) {
 		return nil, err
 	}
 	if count > 0 {
-		return nil, errors.New("username or email already exists")
+		// H-5: return generic error — don't leak whether user or email was the match
+		return nil, errors.New("registration failed")
 	}
 
 	// Hash password
@@ -91,6 +115,91 @@ func (s *Service) GetUserByID(id int64) (*User, error) {
 	return user, nil
 }
 
+// StoreRefreshToken persists the jti for a refresh token so it can be validated
+// during rotation.
+func (s *Service) StoreRefreshToken(userID int64, jti string) error {
+	expires := time.Now().Add(s.jwtManager.RefreshExpiry())
+	_, err := s.db.Exec(
+		"INSERT INTO refresh_tokens (user_id, jti, expires_at) VALUES (?, ?, ?)",
+		userID, jti, expires,
+	)
+	return err
+}
+
+// ValidateAndRotateRefreshToken checks that the jti exists, belongs to the
+// user, and has not been revoked. If valid, it revokes the old jti and returns
+// true. This implements one-time-use refresh token rotation.
+func (s *Service) ValidateAndRotateRefreshToken(userID int64, jti string) (bool, error) {
+	var dbUserID int64
+	var revoked bool
+	var expiresAt time.Time
+
+	err := s.db.QueryRow(
+		"SELECT user_id, revoked, expires_at FROM refresh_tokens WHERE jti = ?", jti,
+	).Scan(&dbUserID, &revoked, &expiresAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	if dbUserID != userID || revoked || time.Now().After(expiresAt) {
+		return false, nil
+	}
+
+	// Revoke the old token (one-time use)
+	_, err = s.db.Exec("UPDATE refresh_tokens SET revoked = TRUE WHERE jti = ?", jti)
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// RevokeAllUserRefreshTokens revokes all refresh tokens for a user (e.g. on
+// password change or logout-all).
+func (s *Service) RevokeAllUserRefreshTokens(userID int64) error {
+	_, err := s.db.Exec("UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = ? AND revoked = FALSE", userID)
+	return err
+}
+
+// CleanupExpiredRefreshTokens removes expired tokens (call periodically).
+func (s *Service) CleanupExpiredRefreshTokens() error {
+	_, err := s.db.Exec("DELETE FROM refresh_tokens WHERE expires_at < NOW()")
+	return err
+}
+
+// GenerateTokenPair is a convenience method that creates access + refresh
+// tokens and stores the refresh jti.
+func (s *Service) GenerateTokenPair(user *User) (*TokenResponse, error) {
+	access, err := s.jwtManager.GenerateAccessToken(user)
+	if err != nil {
+		return nil, err
+	}
+	refresh, jti, err := s.jwtManager.GenerateRefreshToken(user)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.StoreRefreshToken(user.ID, jti); err != nil {
+		return nil, err
+	}
+
+	return &TokenResponse{
+		AccessToken:  access,
+		RefreshToken: refresh,
+		ExpiresIn:    7200,
+		User:         *user,
+	}, nil
+}
+
 func (s *Service) JWTManager() *JWTManager {
 	return s.jwtManager
+}
+
+// secureRandomHex generates a random hex string for token IDs.
+func secureRandomHex(n int) string {
+	b := make([]byte, n)
+	rand.Read(b)
+	return hex.EncodeToString(b)
 }

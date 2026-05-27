@@ -28,7 +28,7 @@ type WebhookHandler struct {
 
 func NewWebhookHandler(secret string, giteaClient *gitea.Client, noteSvc *note.Service, indexer *search.Indexer) *WebhookHandler {
 	if secret == "" {
-		log.Warn().Msg("webhook secret is empty, signature verification is disabled")
+		log.Fatal().Msg("WEBHOOK_SECRET is not set — refusing to start without webhook signature verification")
 	}
 	return &WebhookHandler{
 		secret:  secret,
@@ -51,7 +51,7 @@ func (h *WebhookHandler) Handle(c *gin.Context) {
 		return
 	}
 
-	if h.secret != "" && !h.verifySignature(body, signature) {
+	if !h.verifySignature(body, signature) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "invalid signature"})
 		return
 	}

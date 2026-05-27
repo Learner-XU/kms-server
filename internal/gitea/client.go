@@ -15,7 +15,7 @@ import (
 type Client struct {
 	baseURL    string
 	token      string
-	repo       string
+	repo       string // "owner/name"
 	httpClient *http.Client
 }
 
@@ -61,8 +61,27 @@ type BranchInfo struct {
 	} `json:"commit"`
 }
 
+// encodeRepo splits "owner/name" and escapes each segment separately.
+func encodeRepo(repo string) string {
+	parts := strings.SplitN(repo, "/", 2)
+	if len(parts) == 2 {
+		return url.PathEscape(parts[0]) + "/" + url.PathEscape(parts[1])
+	}
+	return url.PathEscape(repo)
+}
+
+// encodePath splits a "/" delimited path into segments and applies
+// url.PathEscape to each one, then re-joins with "/".
+func encodePath(path string) string {
+	parts := strings.Split(path, "/")
+	for i, p := range parts {
+		parts[i] = url.PathEscape(p)
+	}
+	return strings.Join(parts, "/")
+}
+
 func (c *Client) GetFile(ctx context.Context, path string) (*FileContent, error) {
-	endpoint := fmt.Sprintf("/api/v1/repos/%s/contents/%s", c.repo, path)
+	endpoint := fmt.Sprintf("/api/v1/repos/%s/contents/%s", encodeRepo(c.repo), encodePath(path))
 	body, err := c.doGet(ctx, endpoint)
 	if err != nil {
 		return nil, err
@@ -87,7 +106,7 @@ func (c *Client) PutFile(ctx context.Context, path, content, message, sha string
 	if sha != "" {
 		payload["sha"] = sha
 	}
-	endpoint := fmt.Sprintf("/api/v1/repos/%s/contents/%s", c.repo, path)
+	endpoint := fmt.Sprintf("/api/v1/repos/%s/contents/%s", encodeRepo(c.repo), encodePath(path))
 	_, err := c.doPut(ctx, endpoint, payload)
 	return err
 }
@@ -97,13 +116,13 @@ func (c *Client) DeleteFile(ctx context.Context, path, sha, message string) erro
 		"sha":     sha,
 		"message": message,
 	}
-	endpoint := fmt.Sprintf("/api/v1/repos/%s/contents/%s", c.repo, path)
+	endpoint := fmt.Sprintf("/api/v1/repos/%s/contents/%s", encodeRepo(c.repo), encodePath(path))
 	_, err := c.doDelete(ctx, endpoint, payload)
 	return err
 }
 
 func (c *Client) ListTree(ctx context.Context, path string, recursive bool) ([]TreeEntry, error) {
-	branchEndpoint := fmt.Sprintf("/api/v1/repos/%s/branches/main", c.repo)
+	branchEndpoint := fmt.Sprintf("/api/v1/repos/%s/branches/main", encodeRepo(c.repo))
 	branchBody, err := c.doGet(ctx, branchEndpoint)
 	if err != nil {
 		return nil, err
@@ -113,7 +132,7 @@ func (c *Client) ListTree(ctx context.Context, path string, recursive bool) ([]T
 		return nil, err
 	}
 
-	treeEndpoint := fmt.Sprintf("/api/v1/repos/%s/git/trees/%s", c.repo, branch.Commit.ID)
+	treeEndpoint := fmt.Sprintf("/api/v1/repos/%s/git/trees/%s", encodeRepo(c.repo), url.PathEscape(branch.Commit.ID))
 	if recursive {
 		treeEndpoint += "?recursive=1"
 	}
@@ -143,7 +162,7 @@ func (c *Client) ListTree(ctx context.Context, path string, recursive bool) ([]T
 
 func (c *Client) GetFileHistory(ctx context.Context, path string, page, limit int) ([]CommitInfo, error) {
 	endpoint := fmt.Sprintf("/api/v1/repos/%s/commits?path=%s&page=%d&limit=%d",
-		c.repo, url.QueryEscape(path), page, limit)
+		encodeRepo(c.repo), url.QueryEscape(path), page, limit)
 	body, err := c.doGet(ctx, endpoint)
 	if err != nil {
 		return nil, err
@@ -161,13 +180,13 @@ func (c *Client) CreateIssue(ctx context.Context, title, body string, labels []s
 		"body":   body,
 		"labels": labels,
 	}
-	endpoint := fmt.Sprintf("/api/v1/repos/%s/issues", c.repo)
+	endpoint := fmt.Sprintf("/api/v1/repos/%s/issues", encodeRepo(c.repo))
 	_, err := c.doPost(ctx, endpoint, payload)
 	return err
 }
 
 func (c *Client) ListIssues(ctx context.Context, state string) (json.RawMessage, error) {
-	endpoint := fmt.Sprintf("/api/v1/repos/%s/issues?state=%s", c.repo, state)
+	endpoint := fmt.Sprintf("/api/v1/repos/%s/issues?state=%s", encodeRepo(c.repo), state)
 	return c.doGet(ctx, endpoint)
 }
 

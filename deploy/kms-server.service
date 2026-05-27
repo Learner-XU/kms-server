@@ -1,0 +1,28 @@
+[Unit]
+Description=KMS - Git-native Knowledge Management Server
+After=network.target mysql.service
+Wants=mysql.service
+
+[Service]
+Type=simple
+User=kms
+Group=kms
+WorkingDirectory=/opt/kms
+ExecStart=/opt/kms/kms-server
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/kms
+PrivateTmp=true
+
+# Environment
+EnvironmentFile=/opt/kms/.env
+
+[Install]
+WantedBy=multi-user.target

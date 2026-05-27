@@ -34,12 +34,12 @@ func (h *Handler) Register(c *gin.Context) {
 
 	user, err := h.svc.Register(&req)
 	if err != nil {
+		// H-5: return generic 200-style message to avoid user enumeration
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Auto-login after register
-	tokens, err := h.generateTokens(user)
+	tokens, err := h.svc.GenerateTokenPair(user)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to generate tokens after register")
 		c.JSON(http.StatusCreated, gin.H{"user": user})
@@ -62,7 +62,7 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	tokens, err := h.generateTokens(user)
+	tokens, err := h.svc.GenerateTokenPair(user)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to generate tokens")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
@@ -85,14 +85,34 @@ func (h *Handler) Refresh(c *gin.Context) {
 		return
 	}
 
+	// H-1: Validate jti is present, not revoked, and rotate
+	if claims.ID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing token id"})
+		return
+	}
+
+	valid, err := h.svc.ValidateAndRotateRefreshToken(claims.UserID, claims.ID)
+	if err != nil {
+		log.Error().Err(err).Msg("refresh token validation error")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	if !valid {
+		// Possible token reuse attack — revoke all tokens for this user
+		_ = h.svc.RevokeAllUserRefreshTokens(claims.UserID)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "refresh token invalid or already used"})
+		return
+	}
+
 	user, err := h.svc.GetUserByID(claims.UserID)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not found"})
 		return
 	}
 
-	tokens, err := h.generateTokens(user)
+	tokens, err := h.svc.GenerateTokenPair(user)
 	if err != nil {
+		log.Error().Err(err).Msg("failed to generate tokens on refresh")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
@@ -114,21 +134,4 @@ func (h *Handler) Me(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, user)
-}
-
-func (h *Handler) generateTokens(user *User) (*TokenResponse, error) {
-	access, err := h.svc.JWTManager().GenerateAccessToken(user)
-	if err != nil {
-		return nil, err
-	}
-	refresh, err := h.svc.JWTManager().GenerateRefreshToken(user)
-	if err != nil {
-		return nil, err
-	}
-	return &TokenResponse{
-		AccessToken:  access,
-		RefreshToken: refresh,
-		ExpiresIn:    7200,
-		User:         *user,
-	}, nil
 }

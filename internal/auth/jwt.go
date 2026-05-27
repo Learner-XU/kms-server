@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/oklog/ulid/v2"
 )
 
 type JWTManager struct {
@@ -43,19 +44,28 @@ func (m *JWTManager) GenerateAccessToken(user *User) (string, error) {
 	return token.SignedString(m.secret)
 }
 
-func (m *JWTManager) GenerateRefreshToken(user *User) (string, error) {
+// GenerateRefreshToken creates a refresh token with a unique jti (JWT ID) for
+// rotation tracking. The caller is responsible for persisting the jti.
+func (m *JWTManager) GenerateRefreshToken(user *User) (string, string, error) {
+	jti := ulid.Make().String()
 	claims := Claims{
 		UserID:   user.ID,
 		Username: user.Username,
 		Role:     user.Role,
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        jti,
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(m.refreshExpiry)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			Issuer:    "kms-refresh",
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(m.secret)
+	signed, err := token.SignedString(m.secret)
+	return signed, jti, err
+}
+
+func (m *JWTManager) RefreshExpiry() time.Duration {
+	return m.refreshExpiry
 }
 
 func (m *JWTManager) ParseToken(tokenStr string) (*Claims, error) {

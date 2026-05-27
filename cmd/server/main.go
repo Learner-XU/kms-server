@@ -1,8 +1,8 @@
 package main
 
 import (
-	"fmt"
 	"database/sql"
+	"fmt"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -56,7 +56,7 @@ func main() {
 
 	// Router
 	r := gin.Default()
-	r.Use(middleware.CORS())
+	r.Use(middleware.CORS(cfg.AllowedOrigins))
 	r.Use(middleware.JWTAuth(authSvc.JWTManager()))
 
 	api := r.Group("/api")
@@ -65,6 +65,15 @@ func main() {
 		noteHandler.RegisterRoutes(api)
 		searchHandler.RegisterRoutes(api)
 		graphHandler.RegisterRoutes(api)
+	}
+
+	// C-1: RBAC — admin-only management routes can be added here.
+	// Example: admin group requires "admin" role.
+	admin := api.Group("/admin")
+	admin.Use(middleware.RequireRole("admin"))
+	{
+		// Future admin endpoints go here
+		// e.g. admin.GET("/users", adminHandler.ListUsers)
 	}
 
 	webhookHandler.RegisterRoutes(r.Group("/"))

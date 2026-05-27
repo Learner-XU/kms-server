@@ -13,12 +13,13 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig
-	Gitea    GiteaConfig
-	MySQL    MySQLConfig
-	Webhook  WebhookConfig
-	APIKey   string
-	JWTSecret string
+	Server        ServerConfig
+	Gitea         GiteaConfig
+	MySQL         MySQLConfig
+	Webhook       WebhookConfig
+	APIKey        string
+	JWTSecret     string
+	AllowedOrigins []string
 }
 
 type ServerConfig struct {
@@ -46,6 +47,12 @@ func Load() *Config {
 	// Load .env file if present
 	loadEnvFile()
 
+	originsStr := getEnv("ALLOWED_ORIGINS", "http://localhost:3456,http://localhost:3001")
+	origins := strings.Split(originsStr, ",")
+	for i := range origins {
+		origins[i] = strings.TrimSpace(origins[i])
+	}
+
 	cfg := &Config{
 		Server: ServerConfig{
 			Port: getEnv("PORT", "8000"),
@@ -61,8 +68,9 @@ func Load() *Config {
 		Webhook: WebhookConfig{
 			Secret: getEnv("WEBHOOK_SECRET", ""),
 		},
-		APIKey: getEnv("API_KEY", ""),
-		JWTSecret: requireEnvOrGenerate("JWT_SECRET"),
+		APIKey:         getEnv("API_KEY", ""),
+		AllowedOrigins: origins,
+		JWTSecret:      requireEnvOrGenerate("JWT_SECRET"),
 	}
 	return cfg
 }
