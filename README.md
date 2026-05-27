@@ -48,7 +48,7 @@
 |------|---------|-----------------|
 | Go | >= 1.22 | `brew install go` |
 | Node.js | >= 18 | `brew install node` |
-| MySQL | >= 8.0 | `brew install mysql` |
+| MySQL | >= 5.7 | `brew install mysql@5.7` 或 `brew install mysql` |
 | Gitea | >= 1.20 | `brew install gitea` |
 
 ### 第一步：启动 Gitea
