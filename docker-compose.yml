@@ -54,7 +54,7 @@ services:
       GITEA_TOKEN: "${GITEA_TOKEN}"
       GITEA_REPO: "${GITEA_REPO:-xuzong/knowledge-vault}"
       MYSQL_DSN: "root:root@tcp(mysql:3306)/kms?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci"
-      JWT_SECRET: "${JWT_SECRET:-change-me-in-production}"
+      JWT_SECRET: "${JWT_SECRET:?Set JWT_SECRET in .env before starting}"
     ports:
       - "8000:8000"
 

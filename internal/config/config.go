@@ -2,6 +2,9 @@ package config
 
 import (
 	"bufio"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"os"
 	"strings"
 
@@ -59,9 +62,26 @@ func Load() *Config {
 			Secret: getEnv("WEBHOOK_SECRET", ""),
 		},
 		APIKey: getEnv("API_KEY", ""),
-		JWTSecret: getEnv("JWT_SECRET", "kms-jwt-secret-change-me"),
+		JWTSecret: requireEnvOrGenerate("JWT_SECRET"),
 	}
 	return cfg
+}
+
+// requireEnvOrGenerate returns the value of the env var or generates a random
+// 32-byte hex secret. A fixed default is never used to avoid shared-secret
+// deployments leaking auth across instances.
+func requireEnvOrGenerate(key string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		log.Fatal().Err(err).Msgf("failed to generate random %s", key)
+	}
+	secret := hex.EncodeToString(b)
+	fmt.Fprintf(os.Stderr, "[config] WARNING: %s not set — generated ephemeral secret (tokens will not survive restart)\n", key)
+	os.Setenv(key, secret)
+	return secret
 }
 
 func getEnv(key, fallback string) string {
