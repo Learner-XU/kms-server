@@ -74,6 +74,17 @@ func NewIndexer(dsn string) (*Indexer, error) {
 	return &Indexer{db: db}, nil
 }
 
+// NewIndexerWithDB creates an Indexer with an existing database connection.
+func NewIndexerWithDB(db *sql.DB) (*Indexer, error) {
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("ping mysql: %w", err)
+	}
+	if err := migrate(db); err != nil {
+		return nil, err
+	}
+	return &Indexer{db: db}, nil
+}
+
 func migrate(db *sql.DB) error {
 	_, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS notes (

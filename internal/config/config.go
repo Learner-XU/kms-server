@@ -15,6 +15,7 @@ type Config struct {
 	MySQL    MySQLConfig
 	Webhook  WebhookConfig
 	APIKey   string
+	JWTSecret string
 }
 
 type ServerConfig struct {
@@ -58,6 +59,7 @@ func Load() *Config {
 			Secret: getEnv("WEBHOOK_SECRET", ""),
 		},
 		APIKey: getEnv("API_KEY", ""),
+		JWTSecret: getEnv("JWT_SECRET", "kms-jwt-secret-change-me"),
 	}
 	return cfg
 }
