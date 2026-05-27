@@ -1,6 +1,6 @@
 # KMS 知识管理系统
 
-基于 Gitea 的本地知识管理系统，参考 Obsidian + Roam Research 设计理念。
+基于 Gitea 的本地知识管理系统，参考 Obsidian + Roam Research 设计理念。支持 macOS / Linux / Docker 多平台部署。
 
 ## 架构
 
@@ -35,56 +35,110 @@
 |------|------|
 | 前端 | Next.js 16 + React 19 + TypeScript + Tailwind CSS 4 |
 | 后端 | Go 1.22+ + Gin + golang-jwt |
-| 存储 | Gitea (Git) + MySQL 8+ |
+| 存储 | Gitea (Git) + MySQL 5.7+ |
 | 认证 | JWT (access token 2h + refresh token 7d) |
 
 ---
 
-## 快速部署
+## 部署方式
+
+| 方式 | 适用场景 | 说明 |
+|------|---------|------|
+| **Docker Compose** | 快速体验 / 生产部署 | 一条命令拉起全栈 |
+| **本地开发** | 开发调试 | macOS / Linux 直接运行 |
+| **二进制部署** | 服务器 / 无 Docker 环境 | 交叉编译，上传即用 |
+
+---
+
+## 方式一：Docker Compose 一键部署（推荐）
+
+前置条件：Docker >= 20.10, Docker Compose >= 2.0
+
+```bash
+# 1. 克隆两个仓库（同级目录）
+git clone git@github.com:Learner-XU/kms-server.git
+git clone git@github.com:Learner-XU/kms-web.git
+cd kms-server
+
+# 2. 配置环境变量
+cp .env.deploy.example .env
+# 编辑 .env，填写 GITEA_TOKEN 和 JWT_SECRET
+
+# 3. 先启动 Gitea + MySQL
+docker compose up -d mysql gitea
+# 访问 http://localhost:3000 完成 Gitea 初始化
+#   → 注册管理员账户
+#   → 创建仓库（如 xuzong/knowledge-vault）
+#   → Settings → Applications → Generate New Token
+#   → 将 Token 填入 .env 的 GITEA_TOKEN
+
+# 4. 启动全栈
+docker compose up -d
+```
+
+| 服务 | 地址 | 说明 |
+|------|------|------|
+| **KMS 前端** | http://localhost:3456 | 注册账户后使用 |
+| **KMS API** | http://localhost:8000 | 后端接口 |
+| **Gitea** | http://localhost:3000 | Git 存储后端 |
+| **MySQL** | localhost:3306 | 数据库 |
+
+常用命令：
+```bash
+docker compose logs -f kms-server  # 查看日志
+docker compose restart kms-server  # 重启服务
+docker compose down                # 停止所有服务
+docker compose down -v             # 停止并删除数据（危险！）
+docker compose build --no-cache    # 重新构建镜像
+```
+
+---
+
+## 方式二：本地开发
 
 ### 前置依赖
 
-| 软件 | 最低版本 | 安装方式 (macOS) |
-|------|---------|-----------------|
-| Go | >= 1.22 | `brew install go` |
-| Node.js | >= 18 | `brew install node` |
-| MySQL | >= 5.7 | `brew install mysql@5.7` 或 `brew install mysql` |
-| Gitea | >= 1.20 | `brew install gitea` |
+| 软件 | 最低版本 | macOS 安装 | Linux 安装 |
+|------|---------|-----------|-----------|
+| Go | >= 1.22 | `brew install go` | [golang.org/dl](https://go.dev/dl/) |
+| Node.js | >= 18 | `brew install node` | [nodejs.org](https://nodejs.org/) |
+| MySQL | >= 5.7 | `brew install mysql` | `apt install mysql-server` |
+| Gitea | >= 1.20 | `brew install gitea` | [dl.gitea.io](https://dl.gitea.io/gitea/) |
 
 ### 第一步：启动 Gitea
 
 ```bash
-# 安装并启动 Gitea
+# macOS
 brew install gitea
-gitea web --config /opt/homebrew/etc/gitea/app.ini
-# 访问 http://localhost:3000 完成初始化设置
-# 创建管理员账户（记住用户名和 Token）
+gitea web
+
+# Linux
+wget -O gitea https://dl.gitea.io/gitea/1.22.0/gitea-1.22.0-linux-amd64
+chmod +x gitea
+./gitea web
 ```
 
-在 Gitea Web UI 中：
-1. 完成初始安装（数据库选 SQLite 或 MySQL 均可）
-2. 创建管理员账户
-3. 创建一个仓库用于存储笔记（如 `xuzong/knowledge-vault`）
-4. 进入 **Settings → Applications → Generate New Token**，勾选全部权限，保存 Token
+访问 http://localhost:3000，完成初始化：
+1. 注册管理员账户
+2. 创建仓库（如 `xuzong/knowledge-vault`）
+3. **Settings → Applications → Generate New Token**，保存 Token
 
 ### 第二步：配置 MySQL
 
 ```bash
 # 启动 MySQL
-brew services start mysql
+brew services start mysql          # macOS
+sudo systemctl start mysql         # Linux
 
 # 创建数据库
-mysql -u root -p << 'SQL'
-CREATE DATABASE IF NOT EXISTS kms DEFAULT CHARSET utf8mb4 COLLATE utf8mb4_unicode_ci;
-SQL
+mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS kms DEFAULT CHARSET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 ```
 
-> KMS 会自动建表（notes、links、users），无需手动建表。
+> KMS 启动时自动建表（notes、links、users），无需手动建表。
 
-### 第三步：启动后端 (kms-server)
+### 第三步：启动后端
 
 ```bash
-# 克隆仓库
 git clone git@github.com:Learner-XU/kms-server.git
 cd kms-server
 
@@ -93,17 +147,15 @@ cat > .env << 'EOF'
 PORT=8000
 GITEA_URL=http://localhost:3000
 GITEA_TOKEN=你的Gitea_Token
-GITEA_REPO=你的用户名/你的仓库名
-MYSQL_DSN=root:你的密码@tcp(127.0.0.1:3306)/kms?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci
-JWT_SECRET=你的JWT密钥_任意复杂字符串
+GITEA_REPO=你的用户名/仓库名
+MYSQL_DSN=root:密码@tcp(127.0.0.1:3306)/kms?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci
+JWT_SECRET=你的JWT密钥
 EOF
 
-# 安装依赖并运行
-go mod download
+# 运行
 go run ./cmd/server/
+# 看到 "KMS server starting addr=:8000" 即成功
 ```
-
-看到 `KMS server starting addr=:8000` 即启动成功。
 
 验证：
 ```bash
@@ -111,46 +163,108 @@ curl http://localhost:8000/health
 # {"status":"ok"}
 ```
 
-### 第四步：启动前端 (kms-web)
+### 第四步：启动前端
 
 ```bash
-# 克隆仓库
 git clone git@github.com:Learner-XU/kms-web.git
 cd kms-web
-
-# 安装依赖
 npm install
-
-# 启动开发服务器
 npx next dev -p 3456 -H 0.0.0.0
 ```
 
-访问 **http://localhost:3456**，自动跳转注册/登录页。
+### 第五步：开始使用
 
-### 第五步：注册用户并开始使用
-
-1. 打开 http://localhost:3456/register
-2. 注册账户（用户名 3-64 字符，密码至少 6 位）
-3. 自动登录进入主界面
-4. 开始创建笔记！
+访问 **http://localhost:3456** → 注册账户 → 开始创建笔记！
 
 ---
 
-## 环境变量说明
+## 方式三：二进制部署
+
+适合服务器环境，不需要 Docker，上传编译好的二进制即可运行。
+
+### 交叉编译
+
+```bash
+cd kms-server
+
+# 编译所有平台
+make build-all
+
+# 或只编译目标平台
+make build-linux              # linux/amd64 + linux/arm64
+make build-darwin             # darwin/amd64 + darwin/arm64
+
+# 查看产物
+ls build/
+# kms-server-darwin-amd64   (11MB)
+# kms-server-darwin-arm64   (9.8MB)
+# kms-server-linux-amd64    (10MB)
+# kms-server-linux-arm64    (9.6MB)
+```
+
+### 部署到服务器
+
+```bash
+# 上传二进制
+scp build/kms-server-linux-amd64 user@server:/opt/kms/kms-server
+
+# 上传前端构建产物（本地先 npm run build）
+scp -r kms-web/.next/standalone/* user@server:/opt/kms-web/
+scp -r kms-web/.next/static user@server:/opt/kms-web/.next/
+scp -r kms-web/public user@server:/opt/kms-web/
+
+# 配置 .env 并启动
+ssh user@server
+cd /opt/kms
+chmod +x kms-server
+./kms-server
+```
+
+### 进程管理（systemd）
+
+```ini
+# /etc/systemd/system/kms-server.service
+[Unit]
+Description=KMS Server
+After=mysql.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/kms
+ExecStart=/opt/kms/kms-server
+Restart=always
+RestartSec=5
+EnvironmentFile=/opt/kms/.env
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl enable kms-server
+sudo systemctl start kms-server
+```
+
+---
+
+## 环境变量
 
 | 变量 | 必填 | 默认值 | 说明 |
 |------|------|--------|------|
 | `PORT` | 否 | `8000` | 后端服务端口 |
 | `GITEA_URL` | 是 | - | Gitea 服务地址 |
 | `GITEA_TOKEN` | 是 | - | Gitea API Token |
-| `GITEA_REPO` | 是 | - | 笔记存储仓库（格式：`用户名/仓库名`） |
+| `GITEA_REPO` | 是 | - | 笔记存储仓库（`用户名/仓库名`） |
 | `MYSQL_DSN` | 是 | - | MySQL 连接字符串 |
-| `JWT_SECRET` | **强烈建议设置** | 内置默认值 | JWT 签名密钥 |
-| `WEBHOOK_SECRET` | 否 | - | Gitea Webhook 签名密钥（可选） |
+| `JWT_SECRET` | **强烈建议** | 内置默认值 | JWT 签名密钥 |
+| `WEBHOOK_SECRET` | 否 | - | Gitea Webhook 签名密钥 |
+| `KMS_API_URL` | 否 | `http://localhost:8000` | 前端→后端地址（Docker 内部通信） |
+
+---
 
 ## API 接口
 
-### 认证（公开接口）
+### 认证（公开）
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -168,7 +282,7 @@ npx next dev -p 3456 -H 0.0.0.0
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/notes` | 列出笔记（可选 `?dir=` 筛选目录） |
+| GET | `/api/notes` | 列出笔记（`?dir=` 筛选目录） |
 | POST | `/api/notes` | 创建笔记 |
 | GET | `/api/notes/*path` | 获取单篇笔记 |
 | PUT | `/api/notes/*path` | 更新笔记 |
@@ -192,82 +306,7 @@ npx next dev -p 3456 -H 0.0.0.0
 
 ---
 
-## Docker 一键部署（推荐）
-
-全栈部署：Gitea + MySQL + kms-server + kms-web。
-
-```bash
-# 前置条件：Docker >= 20.10, Docker Compose >= 2.0
-
-# 1. 克隆两个仓库（同级目录）
-git clone git@github.com:Learner-XU/kms-server.git
-git clone git@github.com:Learner-XU/kms-web.git
-cd kms-server
-
-# 2. 配置环境变量
-cp .env.deploy.example .env
-# 编辑 .env，填写 GITEA_TOKEN
-
-# 3. 先启动 Gitea + MySQL
-docker compose up -d mysql gitea
-# 访问 http://localhost:3000 完成 Gitea 初始化
-# 创建仓库 → 生成 API Token → 填入 .env
-
-# 4. 启动全栈
-docker compose up -d
-```
-
-| 服务 | 地址 |
-|------|------|
-| **KMS 前端** | http://localhost:3456 |
-| **KMS API** | http://localhost:8000 |
-| **Gitea** | http://localhost:3000 |
-
-常用命令：
-```bash
-docker compose logs -f kms-server  # 查看日志
-docker compose restart kms-server  # 重启服务
-docker compose down                # 停止
-docker compose build --no-cache    # 重新构建
-```
-
----
-
-## 本地部署（不用 Docker）
-
-### 交叉编译（多平台）
-
-```bash
-cd kms-server
-make build-all   # 编译 darwin/linux × arm64/amd64 四个平台
-ls build/        # kms-server-darwin-arm64, kms-server-linux-amd64 等
-```
-
-### 手动部署
-
-### 后端编译
-
-```bash
-cd kms-server
-go build -o kms-server ./cmd/server/
-./kms-server
-```
-
-### 前端构建
-
-```bash
-cd kms-web
-npm run build
-npx next start -p 3456 -H 0.0.0.0
-```
-
-### 建议搭配
-
-- **反向代理**：Nginx/Caddy 统一入口，HTTPS
-- **进程管理**：systemd / supervisord / pm2
-- **MySQL**：生产环境建议独立部署，配置备份
-
-### Nginx 参考配置
+## Nginx 反向代理
 
 ```nginx
 server {
@@ -294,42 +333,43 @@ server {
 
 ```
 kms-server/
-├── cmd/server/main.go          # 入口
+├── cmd/server/main.go              # 入口
 ├── internal/
-│   ├── auth/                   # 认证（注册/登录/JWT）
-│   │   ├── model.go
-│   │   ├── jwt.go
-│   │   ├── service.go
-│   │   └── handler.go
-│   ├── note/                   # 笔记 CRUD
-│   ├── search/                 # 搜索索引
-│   ├── graph/                  # 知识图谱
-│   ├── gitea/                  # Gitea API 客户端
-│   ├── sync/                   # 同步/Webhook
-│   ├── middleware/              # CORS / JWT 中间件
-│   └── config/                 # 配置加载
-└── pkg/                        # 工具包（Markdown解析/ID生成）
+│   ├── auth/                       # 认证（注册/登录/JWT）
+│   ├── note/                       # 笔记 CRUD
+│   ├── search/                     # 搜索索引（MySQL）
+│   ├── graph/                      # 知识图谱
+│   ├── gitea/                      # Gitea API 客户端
+│   ├── sync/                       # 同步 / Webhook
+│   ├── middleware/                  # CORS / JWT 中间件
+│   └── config/                     # 配置加载（.env）
+├── pkg/                            # 工具包
+├── Makefile                        # 交叉编译
+├── Dockerfile                      # 多阶段构建
+├── docker-compose.yml              # 全栈编排
+└── .env.deploy.example             # 部署配置模板
 
 kms-web/
 ├── src/
 │   ├── app/
-│   │   ├── page.tsx            # 主页（四栏布局）
-│   │   ├── login/page.tsx      # 登录页
-│   │   ├── register/page.tsx   # 注册页
-│   │   └── layout.tsx          # 全局布局 + AuthGuard
+│   │   ├── page.tsx                # 主页（四栏布局）
+│   │   ├── login/page.tsx          # 登录页
+│   │   ├── register/page.tsx       # 注册页
+│   │   └── layout.tsx              # 全局布局 + AuthGuard
 │   ├── components/
-│   │   ├── LeftNav.tsx         # 左侧导航栏
-│   │   ├── FileBrowser.tsx     # 文件树浏览器
-│   │   ├── MainEditor.tsx      # 笔记编辑器
-│   │   ├── RightSidebar.tsx    # 右侧边栏
-│   │   ├── GraphView.tsx       # 知识图谱
-│   │   ├── DiaryView.tsx       # 日记视图
-│   │   ├── NewNoteDialog.tsx   # 新建笔记对话框
-│   │   └── AuthGuard.tsx       # 路由守卫
+│   │   ├── LeftNav.tsx             # 左侧导航栏
+│   │   ├── FileBrowser.tsx         # 文件树浏览器
+│   │   ├── MainEditor.tsx          # 笔记编辑器
+│   │   ├── RightSidebar.tsx        # 右侧边栏
+│   │   ├── GraphView.tsx           # 知识图谱
+│   │   ├── DiaryView.tsx           # 日记视图
+│   │   ├── NewNoteDialog.tsx       # 新建笔记对话框
+│   │   └── AuthGuard.tsx           # 路由守卫
 │   └── lib/
-│       ├── api.ts              # API 客户端 + Token 管理
-│       └── store.ts            # Zustand 全局状态
-└── next.config.ts              # Next.js 配置（API 代理）
+│       ├── api.ts                  # API 客户端 + Token 管理
+│       └── store.ts                # Zustand 全局状态
+├── Dockerfile                      # 多阶段构建
+└── next.config.ts                  # API 代理 + standalone
 ```
 
 ---
@@ -338,14 +378,15 @@ kms-web/
 
 **Q: 启动报 `address already in use`**
 ```bash
-lsof -ti:8000 | xargs kill -9  # 杀掉占用 8000 端口的进程
-lsof -ti:3456 | xargs kill -9  # 杀掉占用 3456 端口的进程
+lsof -ti:8000 | xargs kill -9
+lsof -ti:3456 | xargs kill -9
 ```
 
 **Q: MySQL 连接失败**
 ```bash
-brew services restart mysql
-mysql -u root -p -e "SELECT 1"
+brew services restart mysql         # macOS
+sudo systemctl restart mysql        # Linux
+mysql -u root -p -e "SELECT 1"     # 测试连接
 ```
 
 **Q: 笔记搜索无结果**
@@ -355,7 +396,10 @@ mysql -u root -p -e "SELECT 1"
 检查 JWT_SECRET 是否和后端 `.env` 一致，清除浏览器 localStorage 后重新登录。
 
 **Q: 局域网其他设备无法访问**
-前端已配置 `allowedDevOrigins` 和 `0.0.0.0` 监听。确保防火墙允许 3456 和 8000 端口。
+确保后端监听 `0.0.0.0`（默认已配置），防火墙允许 3456 和 8000 端口。
+
+**Q: Docker 内部通信不通**
+确认 docker-compose.yml 中 `KMS_API_URL` 指向 `http://kms-server:8000`（容器名而非 localhost）。
 
 ## License
 
