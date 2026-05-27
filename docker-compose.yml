@@ -1,0 +1,78 @@
+version: "3.8"
+
+services:
+  # ========== MySQL ==========
+  mysql:
+    image: mysql:8.0
+    container_name: kms-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: kms
+      MYSQL_CHARSET: utf8mb4
+      MYSQL_COLLATION: utf8mb4_unicode_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ========== Gitea ==========
+  gitea:
+    image: gitea/gitea:1.22
+    container_name: kms-gitea
+    restart: unless-stopped
+    environment:
+      - USER_UID=1000
+      - USER_GID=1000
+      - GITEA__database__DB_TYPE=sqlite3
+      - GITEA__server__ROOT_URL=http://localhost:3000
+      - GITEA__server__HTTP_PORT=3000
+    ports:
+      - "3000:3000"
+      - "2222:22"
+    volumes:
+      - gitea_data:/data
+
+  # ========== KMS Backend ==========
+  kms-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kms-server
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      PORT: "8000"
+      GITEA_URL: "http://gitea:3000"
+      GITEA_TOKEN: "${GITEA_TOKEN}"
+      GITEA_REPO: "${GITEA_REPO:-xuzong/knowledge-vault}"
+      MYSQL_DSN: "root:root@tcp(mysql:3306)/kms?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci"
+      JWT_SECRET: "${JWT_SECRET:-change-me-in-production}"
+    ports:
+      - "8000:8000"
+
+  # ========== KMS Web ==========
+  kms-web:
+    build:
+      context: ../kms-web
+      dockerfile: Dockerfile
+    container_name: kms-web
+    restart: unless-stopped
+    depends_on:
+      - kms-server
+    environment:
+      KMS_API_URL: "http://kms-server:8000"
+      PORT: "3456"
+    ports:
+      - "3456:3456"
+
+volumes:
+  mysql_data:
+  gitea_data:

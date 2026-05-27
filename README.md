@@ -192,7 +192,58 @@ npx next dev -p 3456 -H 0.0.0.0
 
 ---
 
-## 生产环境部署
+## Docker 一键部署（推荐）
+
+全栈部署：Gitea + MySQL + kms-server + kms-web。
+
+```bash
+# 前置条件：Docker >= 20.10, Docker Compose >= 2.0
+
+# 1. 克隆两个仓库（同级目录）
+git clone git@github.com:Learner-XU/kms-server.git
+git clone git@github.com:Learner-XU/kms-web.git
+cd kms-server
+
+# 2. 配置环境变量
+cp .env.deploy.example .env
+# 编辑 .env，填写 GITEA_TOKEN
+
+# 3. 先启动 Gitea + MySQL
+docker compose up -d mysql gitea
+# 访问 http://localhost:3000 完成 Gitea 初始化
+# 创建仓库 → 生成 API Token → 填入 .env
+
+# 4. 启动全栈
+docker compose up -d
+```
+
+| 服务 | 地址 |
+|------|------|
+| **KMS 前端** | http://localhost:3456 |
+| **KMS API** | http://localhost:8000 |
+| **Gitea** | http://localhost:3000 |
+
+常用命令：
+```bash
+docker compose logs -f kms-server  # 查看日志
+docker compose restart kms-server  # 重启服务
+docker compose down                # 停止
+docker compose build --no-cache    # 重新构建
+```
+
+---
+
+## 本地部署（不用 Docker）
+
+### 交叉编译（多平台）
+
+```bash
+cd kms-server
+make build-all   # 编译 darwin/linux × arm64/amd64 四个平台
+ls build/        # kms-server-darwin-arm64, kms-server-linux-amd64 等
+```
+
+### 手动部署
 
 ### 后端编译
 
