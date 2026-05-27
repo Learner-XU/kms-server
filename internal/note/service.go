@@ -2,6 +2,7 @@ package note
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -9,17 +10,65 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"kms-server/internal/gitea"
+	"kms-server/internal/search"
 	"kms-server/pkg/frontmatter"
 	"kms-server/pkg/id"
 	"kms-server/pkg/markdown"
 )
 
+// validatePathSegment checks a path segment for traversal attacks.
+func validatePathSegment(path string) error {
+	if path == "" {
+		return nil
+	}
+	if strings.Contains(path, "\x00") {
+		return fmt.Errorf("invalid path: contains null byte")
+	}
+	if strings.HasPrefix(path, "/") {
+		return fmt.Errorf("invalid path: must not start with /")
+	}
+	parts := strings.Split(path, "/")
+	for _, part := range parts {
+		if part == ".." {
+			return fmt.Errorf("invalid path: contains .. traversal")
+		}
+	}
+	return nil
+}
+
+// sanitizePath validates a note path for traversal attacks.
+// It does NOT add a prefix - the caller is responsible for ensuring
+// the path is used correctly with the Gitea API.
+func sanitizePath(path string) (string, error) {
+	if path == "" {
+		return "", fmt.Errorf("path is required")
+	}
+	if strings.Contains(path, "\x00") {
+		return "", fmt.Errorf("invalid path: contains null byte")
+	}
+	if strings.HasPrefix(path, "/") {
+		return "", fmt.Errorf("invalid path: must not start with /")
+	}
+	parts := strings.Split(path, "/")
+	for _, part := range parts {
+		if part == ".." {
+			return "", fmt.Errorf("invalid path: contains .. traversal")
+		}
+	}
+	return path, nil
+}
+
 type Service struct {
-	gitea *gitea.Client
+	gitea   *gitea.Client
+	indexer *search.Indexer
 }
 
 func NewService(giteaClient *gitea.Client) *Service {
 	return &Service{gitea: giteaClient}
+}
+
+func (s *Service) SetIndexer(idx *search.Indexer) {
+	s.indexer = idx
 }
 
 func (s *Service) Get(ctx context.Context, path string) (*Note, error) {
@@ -200,6 +249,16 @@ func (s *Service) Delete(ctx context.Context, path string) error {
 }
 
 func (s *Service) List(ctx context.Context, dirPath string) ([]*Note, error) {
+	// Try MySQL index first to avoid N+1 Gitea API calls
+	if s.indexer != nil {
+		notes, err := s.listFromIndex(dirPath)
+		if err == nil && len(notes) > 0 {
+			return notes, nil
+		}
+		if err != nil {
+			log.Warn().Err(err).Msg("failed to list from index, falling back to gitea")
+		}
+	}
 	entries, err := s.gitea.ListTree(ctx, dirPath, true)
 	if err != nil {
 		return nil, err
@@ -222,6 +281,47 @@ func (s *Service) List(ctx context.Context, dirPath string) ([]*Note, error) {
 
 func (s *Service) GetHistory(ctx context.Context, path string) ([]gitea.CommitInfo, error) {
 	return s.gitea.GetFileHistory(ctx, path+".md", 1, 50)
+}
+
+func (s *Service) listFromIndex(dirPath string) ([]*Note, error) {
+	db := s.indexer.DB()
+	query := "SELECT id, path, title, content, type, status, tags, summary, source, sha, created, updated FROM notes"
+	var args []interface{}
+	if dirPath != "" {
+		query += " WHERE path LIKE ?"
+		args = append(args, dirPath+"/%")
+	}
+	query += " ORDER BY updated DESC"
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var notes []*Note
+	for rows.Next() {
+		var n Note
+		var tagsJSON string
+		var created, updated time.Time
+		if err := rows.Scan(&n.ID, &n.Path, &n.Title, &n.Content, &n.Type, &n.Status,
+			&tagsJSON, &n.Summary, &n.Source, &n.SHA, &created, &updated); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(tagsJSON), &n.Tags); err != nil {
+			n.Tags = []string{}
+		}
+		if n.Tags == nil {
+			n.Tags = []string{}
+		}
+		n.Created = created
+		n.Updated = updated
+		notes = append(notes, &n)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return notes, nil
 }
 
 func appendUnique(slice []string, item string) []string {

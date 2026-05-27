@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
 )
 
 type Handler struct {
@@ -40,7 +41,8 @@ func (h *Handler) Search(c *gin.Context) {
 
 	results, total, err := h.indexer.Search(q, filters, limit, offset)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		log.Error().Err(err).Str("query", q).Msg("search failed")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 
@@ -55,7 +57,8 @@ func (h *Handler) Backlinks(c *gin.Context) {
 	noteID := c.Param("id")
 	results, err := h.indexer.GetBacklinks(noteID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		log.Error().Err(err).Str("noteID", noteID).Msg("backlinks query failed")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"backlinks": results})

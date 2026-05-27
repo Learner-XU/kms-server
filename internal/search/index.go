@@ -229,6 +229,9 @@ func (idx *Indexer) Search(query string, filters SearchFilters, limit, offset in
 		}
 		results = append(results, r)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
 	return results, total, nil
 }
 
@@ -254,6 +257,9 @@ func (idx *Indexer) GetBacklinks(noteID string) ([]SearchResult, error) {
 		}
 		json.Unmarshal([]byte(tagsJSON), &r.Tags)
 		results = append(results, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return results, nil
 }

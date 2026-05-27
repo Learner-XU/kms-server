@@ -14,6 +14,7 @@ type Config struct {
 	Gitea    GiteaConfig
 	MySQL    MySQLConfig
 	Webhook  WebhookConfig
+	APIKey   string
 }
 
 type ServerConfig struct {
@@ -54,8 +55,9 @@ func Load() *Config {
 			DSN: getEnv("MYSQL_DSN", "root:root@tcp(127.0.0.1:3306)/kms?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci"),
 		},
 		Webhook: WebhookConfig{
-			Secret: getEnv("WEBHOOK_SECRET", "kms-webhook-secret"),
+			Secret: getEnv("WEBHOOK_SECRET", ""),
 		},
+		APIKey: getEnv("API_KEY", ""),
 	}
 	return cfg
 }

@@ -23,14 +23,19 @@ type WebhookHandler struct {
 	gitea   *gitea.Client
 	noteSvc *note.Service
 	indexer *search.Indexer
+	sem     chan struct{}
 }
 
 func NewWebhookHandler(secret string, giteaClient *gitea.Client, noteSvc *note.Service, indexer *search.Indexer) *WebhookHandler {
+	if secret == "" {
+		log.Warn().Msg("webhook secret is empty, signature verification is disabled")
+	}
 	return &WebhookHandler{
 		secret:  secret,
 		gitea:   giteaClient,
 		noteSvc: noteSvc,
 		indexer: indexer,
+		sem:     make(chan struct{}, 3),
 	}
 }
 
@@ -94,7 +99,15 @@ func (h *WebhookHandler) handlePush(c *gin.Context, payload map[string]interface
 
 	mdFiles = unique(mdFiles)
 	if len(mdFiles) > 0 {
-		go h.reindexFiles(mdFiles)
+		select {
+		case h.sem <- struct{}{}:
+			go func() {
+				defer func() { <-h.sem }()
+				h.reindexFiles(mdFiles)
+			}()
+		default:
+			log.Warn().Int("files", len(mdFiles)).Msg("reindex skipped: too many concurrent reindex operations")
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "reindexed": len(mdFiles)})

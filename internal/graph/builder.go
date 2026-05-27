@@ -50,6 +50,9 @@ func (b *Builder) buildNodes() ([]note.GraphNode, error) {
 		n.Updated = updated
 		nodes = append(nodes, n)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return nodes, nil
 }
 
@@ -68,6 +71,9 @@ func (b *Builder) buildEdges() ([]note.GraphEdge, error) {
 		}
 		e.Weight = 1.0
 		edges = append(edges, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return edges, nil
 }
@@ -94,6 +100,9 @@ func (b *Builder) FindOrphans() ([]note.GraphNode, error) {
 		json.Unmarshal([]byte(tagsJSON), &n.Tags)
 		n.Updated = updated
 		nodes = append(nodes, n)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return nodes, nil
 }
