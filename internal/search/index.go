@@ -312,4 +312,128 @@ func (idx *Indexer) DB() *sql.DB {
 	return idx.db
 }
 
+// TagInfo represents a tag with its count
+type TagInfo struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
 
+// GetTags returns all unique tags with their note counts
+func (idx *Indexer) GetTags() ([]TagInfo, error) {
+	rows, err := idx.db.Query(`
+		SELECT DISTINCT tag, COUNT(*) as cnt FROM (
+			SELECT JSON_UNQUOTE(JSON_EXTRACT(tags_json, CONCAT('$[', n.n, ']'))) as tag
+			FROM notes
+			JOIN (SELECT 0 n UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4
+			      UNION SELECT 5 UNION SELECT 6 UNION SELECT 7 UNION SELECT 8 UNION SELECT 9) n
+			ON n.n < JSON_LENGTH(tags_json)
+			WHERE tags_json IS NOT NULL AND tags_json != '[]'
+		) t
+		WHERE tag IS NOT NULL AND tag != ''
+		GROUP BY tag
+		ORDER BY cnt DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tags []TagInfo
+	for rows.Next() {
+		var t TagInfo
+		if err := rows.Scan(&t.Name, &t.Count); err != nil {
+			return nil, err
+		}
+		tags = append(tags, t)
+	}
+	if tags == nil {
+		tags = make([]TagInfo, 0)
+	}
+	return tags, rows.Err()
+}
+
+// Stats represents knowledge base statistics
+type Stats struct {
+	TotalNotes int            `json:"total_notes"`
+	ByType     map[string]int `json:"by_type"`
+	ByStatus   map[string]int `json:"by_status"`
+	TagCount   int            `json:"tag_count"`
+	LinkCount  int            `json:"link_count"`
+	RecentNotes []SearchResult `json:"recent_notes"`
+}
+
+// GetStats returns knowledge base statistics
+func (idx *Indexer) GetStats() (*Stats, error) {
+	stats := &Stats{
+		ByType:   make(map[string]int),
+		ByStatus: make(map[string]int),
+	}
+
+	// Total notes
+	idx.db.QueryRow("SELECT COUNT(*) FROM notes").Scan(&stats.TotalNotes)
+
+	// By type
+	rows, err := idx.db.Query("SELECT type, COUNT(*) FROM notes GROUP BY type")
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var t string
+			var c int
+			rows.Scan(&t, &c)
+			stats.ByType[t] = c
+		}
+	}
+
+	// By status
+	rows2, err := idx.db.Query("SELECT status, COUNT(*) FROM notes GROUP BY status")
+	if err == nil {
+		defer rows2.Close()
+		for rows2.Next() {
+			var s string
+			var c int
+			rows2.Scan(&s, &c)
+			stats.ByStatus[s] = c
+		}
+	}
+
+	// Tag count
+	idx.db.QueryRow(`
+		SELECT COUNT(DISTINCT tag) FROM (
+			SELECT JSON_UNQUOTE(JSON_EXTRACT(tags_json, CONCAT('$[', n.n, ']'))) as tag
+			FROM notes
+			JOIN (SELECT 0 n UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4
+			      UNION SELECT 5 UNION SELECT 6 UNION SELECT 7 UNION SELECT 8 UNION SELECT 9) n
+			ON n.n < JSON_LENGTH(tags_json)
+			WHERE tags_json IS NOT NULL AND tags_json != '[]'
+		) t WHERE tag IS NOT NULL AND tag != ''
+	`).Scan(&stats.TagCount)
+
+	// Link count
+	var linkCount int
+	idx.db.QueryRow("SELECT COUNT(*) FROM links").Scan(&linkCount)
+	stats.LinkCount = linkCount
+
+	// Recent notes
+	recentRows, err := idx.db.Query(`
+		SELECT id, path, title, note_type, status, tags_json, COALESCE(summary, '')
+		FROM notes ORDER BY updated DESC LIMIT 5
+	`)
+	if err == nil {
+		defer recentRows.Close()
+		for recentRows.Next() {
+			var r SearchResult
+			var tagsJSON string
+			recentRows.Scan(&r.ID, &r.Path, &r.Title, &r.Type, &r.Status, &tagsJSON, &r.Summary)
+			json.Unmarshal([]byte(tagsJSON), &r.Tags)
+			if r.Tags == nil {
+				r.Tags = []string{}
+			}
+			stats.RecentNotes = append(stats.RecentNotes, r)
+		}
+	}
+	if stats.RecentNotes == nil {
+		stats.RecentNotes = make([]SearchResult, 0)
+	}
+
+	return stats, nil
+}

@@ -11,6 +11,7 @@ import (
 	"kms-server/internal/config"
 	"kms-server/internal/gitea"
 	"kms-server/internal/graph"
+	issuePkg "kms-server/internal/issue"
 	"kms-server/internal/middleware"
 	"kms-server/internal/note"
 	"kms-server/internal/search"
@@ -49,6 +50,7 @@ func main() {
 	noteHandler := note.NewHandler(noteSvc, indexer)
 	searchHandler := search.NewHandler(indexer)
 	graphHandler := graph.NewHandler(graphBuilder)
+	issueHandler := issuePkg.NewHandler(giteaClient)
 	webhookHandler := sync.NewWebhookHandler(cfg.Webhook.Secret, giteaClient, noteSvc, indexer)
 
 	// Startup reindex — scan all .md files and populate MySQL
@@ -65,6 +67,7 @@ func main() {
 		noteHandler.RegisterRoutes(api)
 		searchHandler.RegisterRoutes(api)
 		graphHandler.RegisterRoutes(api)
+		issueHandler.RegisterRoutes(api)
 	}
 
 	// C-1: RBAC — admin-only management routes can be added here.

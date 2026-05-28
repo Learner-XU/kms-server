@@ -19,6 +19,8 @@ func NewHandler(indexer *Indexer) *Handler {
 func (h *Handler) RegisterRoutes(r *gin.RouterGroup) {
 	r.GET("/search", h.Search)
 	r.GET("/backlinks/:id", h.Backlinks)
+	r.GET("/tags", h.ListTags)
+	r.GET("/stats", h.Stats)
 }
 
 func (h *Handler) Search(c *gin.Context) {
@@ -62,4 +64,24 @@ func (h *Handler) Backlinks(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"backlinks": results})
+}
+
+func (h *Handler) ListTags(c *gin.Context) {
+	tags, err := h.indexer.GetTags()
+	if err != nil {
+		log.Error().Err(err).Msg("failed to get tags")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"tags": tags})
+}
+
+func (h *Handler) Stats(c *gin.Context) {
+	stats, err := h.indexer.GetStats()
+	if err != nil {
+		log.Error().Err(err).Msg("failed to get stats")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	c.JSON(http.StatusOK, stats)
 }
