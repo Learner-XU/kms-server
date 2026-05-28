@@ -39,7 +39,7 @@ func (b *Builder) buildNodes() ([]note.GraphNode, error) {
 	}
 	defer rows.Close()
 
-	var nodes []note.GraphNode
+	nodes := make([]note.GraphNode, 0)
 	for rows.Next() {
 		var n note.GraphNode
 		var tagsJSON, updated string
@@ -47,6 +47,9 @@ func (b *Builder) buildNodes() ([]note.GraphNode, error) {
 			return nil, err
 		}
 		json.Unmarshal([]byte(tagsJSON), &n.Tags)
+		if n.Tags == nil {
+			n.Tags = []string{}
+		}
 		n.Updated = updated
 		nodes = append(nodes, n)
 	}
@@ -63,7 +66,7 @@ func (b *Builder) buildEdges() ([]note.GraphEdge, error) {
 	}
 	defer rows.Close()
 
-	var edges []note.GraphEdge
+	edges := make([]note.GraphEdge, 0)
 	for rows.Next() {
 		var e note.GraphEdge
 		if err := rows.Scan(&e.Source, &e.Target, &e.Context); err != nil {
@@ -90,7 +93,7 @@ func (b *Builder) FindOrphans() ([]note.GraphNode, error) {
 	}
 	defer rows.Close()
 
-	var nodes []note.GraphNode
+	nodes := make([]note.GraphNode, 0)
 	for rows.Next() {
 		var n note.GraphNode
 		var tagsJSON, updated string
@@ -98,6 +101,9 @@ func (b *Builder) FindOrphans() ([]note.GraphNode, error) {
 			return nil, err
 		}
 		json.Unmarshal([]byte(tagsJSON), &n.Tags)
+		if n.Tags == nil {
+			n.Tags = []string{}
+		}
 		n.Updated = updated
 		nodes = append(nodes, n)
 	}

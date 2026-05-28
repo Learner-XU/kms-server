@@ -161,6 +161,9 @@ func (s *Service) Get(ctx context.Context, path string) (*Note, error) {
 }
 
 func (s *Service) Create(ctx context.Context, req CreateNoteRequest) (*Note, error) {
+	if req.Type != "" && !isValidNoteType(req.Type) {
+		return nil, fmt.Errorf("invalid note type: %s", req.Type)
+	}
 	noteID := id.New()
 	fm := frontmatter.DefaultFrontmatter(noteID, req.Title)
 
@@ -193,6 +196,9 @@ func (s *Service) Create(ctx context.Context, req CreateNoteRequest) (*Note, err
 }
 
 func (s *Service) Update(ctx context.Context, path string, req UpdateNoteRequest) (*Note, error) {
+	if req.Type != "" && !isValidNoteType(req.Type) {
+		return nil, fmt.Errorf("invalid note type: %s", req.Type)
+	}
 	filePath := path + ".md"
 	file, err := s.gitea.GetFile(ctx, filePath)
 	if err != nil {
@@ -243,16 +249,30 @@ func (s *Service) Delete(ctx context.Context, path string) error {
 	filePath := path + ".md"
 	file, err := s.gitea.GetFile(ctx, filePath)
 	if err != nil {
+		// If file doesn't exist in Gitea, clean up index and return nil
+		if strings.Contains(err.Error(), "404") {
+			if s.indexer != nil {
+				_ = s.indexer.DeleteNote(path)
+			}
+			return nil
+		}
 		return err
 	}
-	return s.gitea.DeleteFile(ctx, filePath, file.SHA, "delete: "+path)
+	if err := s.gitea.DeleteFile(ctx, filePath, file.SHA, "delete: "+path); err != nil {
+		return err
+	}
+	// Clean up index
+	if s.indexer != nil {
+		_ = s.indexer.DeleteNote(path)
+	}
+	return nil
 }
 
 func (s *Service) List(ctx context.Context, dirPath string) ([]*Note, error) {
 	// Try MySQL index first to avoid N+1 Gitea API calls
 	if s.indexer != nil {
 		notes, err := s.listFromIndex(dirPath)
-		if err == nil && len(notes) > 0 {
+		if err == nil {
 			return notes, nil
 		}
 		if err != nil {
@@ -264,7 +284,7 @@ func (s *Service) List(ctx context.Context, dirPath string) ([]*Note, error) {
 		return nil, err
 	}
 
-	var notes []*Note
+	notes := make([]*Note, 0)
 	for _, e := range entries {
 		if e.Type != "blob" || !strings.HasSuffix(e.Path, ".md") {
 			continue
@@ -299,7 +319,7 @@ func (s *Service) listFromIndex(dirPath string) ([]*Note, error) {
 	}
 	defer rows.Close()
 
-	var notes []*Note
+	notes := make([]*Note, 0)
 	for rows.Next() {
 		var n Note
 		var tagsJSON string

@@ -169,6 +169,36 @@ func (idx *Indexer) UpsertNote(note *IndexedNote) error {
 	return tx.Commit()
 }
 
+func (idx *Indexer) DeleteNote(path string) error {
+	tx, err := idx.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Get note ID first to clean up links
+	var noteID string
+	err = tx.QueryRow(`SELECT id FROM notes WHERE path = ?`, path).Scan(&noteID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil // already gone from index
+		}
+		return err
+	}
+
+	// Delete links referencing this note
+	_, _ = tx.Exec(`DELETE FROM links WHERE source_id = ?`, noteID)
+	_, _ = tx.Exec(`DELETE FROM links WHERE target_id = ?`, noteID)
+
+	// Delete the note itself
+	_, err = tx.Exec(`DELETE FROM notes WHERE id = ?`, noteID)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
 func (idx *Indexer) Search(query string, filters SearchFilters, limit, offset int) ([]SearchResult, int, error) {
 	q := strings.TrimSpace(query)
 	if q == "" {
@@ -226,7 +256,7 @@ func (idx *Indexer) Search(query string, filters SearchFilters, limit, offset in
 	}
 	defer rows.Close()
 
-	var results []SearchResult
+	results := make([]SearchResult, 0)
 	for rows.Next() {
 		var r SearchResult
 		var tagsJSON string
@@ -259,7 +289,7 @@ func (idx *Indexer) GetBacklinks(noteID string) ([]SearchResult, error) {
 	}
 	defer rows.Close()
 
-	var results []SearchResult
+	results := make([]SearchResult, 0)
 	for rows.Next() {
 		var r SearchResult
 		var tagsJSON string
@@ -267,6 +297,9 @@ func (idx *Indexer) GetBacklinks(noteID string) ([]SearchResult, error) {
 			return nil, err
 		}
 		json.Unmarshal([]byte(tagsJSON), &r.Tags)
+		if r.Tags == nil {
+			r.Tags = []string{}
+		}
 		results = append(results, r)
 	}
 	if err := rows.Err(); err != nil {
@@ -279,13 +312,4 @@ func (idx *Indexer) DB() *sql.DB {
 	return idx.db
 }
 
-func buildFTSQuery(input string) string {
-	words := strings.Fields(strings.TrimSpace(input))
-	parts := make([]string, 0, len(words))
-	for _, w := range words {
-		// ngram parser doesn't support +/- prefix operators or wildcards well
-		// Just pass the raw terms — ngram will tokenize them automatically
-		parts = append(parts, w)
-	}
-	return strings.Join(parts, " ")
-}
+

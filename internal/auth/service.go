@@ -1,9 +1,7 @@
 package auth
 
 import (
-	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -197,9 +195,4 @@ func (s *Service) JWTManager() *JWTManager {
 	return s.jwtManager
 }
 
-// secureRandomHex generates a random hex string for token IDs.
-func secureRandomHex(n int) string {
-	b := make([]byte, n)
-	rand.Read(b)
-	return hex.EncodeToString(b)
-}
+

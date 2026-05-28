@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -24,6 +26,7 @@ type WebhookHandler struct {
 	noteSvc *note.Service
 	indexer *search.Indexer
 	sem     chan struct{}
+	rateLimiter *IPLimiter
 }
 
 func NewWebhookHandler(secret string, giteaClient *gitea.Client, noteSvc *note.Service, indexer *search.Indexer) *WebhookHandler {
@@ -36,6 +39,7 @@ func NewWebhookHandler(secret string, giteaClient *gitea.Client, noteSvc *note.S
 		noteSvc: noteSvc,
 		indexer: indexer,
 		sem:     make(chan struct{}, 3),
+		rateLimiter: NewIPLimiter(10, 1*time.Second),
 	}
 }
 
@@ -44,6 +48,10 @@ func (h *WebhookHandler) RegisterRoutes(r *gin.RouterGroup) {
 }
 
 func (h *WebhookHandler) Handle(c *gin.Context) {
+	if !h.rateLimiter.Allow(c.ClientIP()) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})
+		return
+	}
 	signature := c.GetHeader("X-Gitea-Signature")
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
@@ -151,6 +159,73 @@ func (h *WebhookHandler) verifySignature(payload []byte, signature string) bool 
 	mac.Write(payload)
 	expected := hex.EncodeToString(mac.Sum(nil))
 	return hmac.Equal([]byte(expected), []byte(signature))
+}
+
+// IPLimiter is a simple in-memory per-IP rate limiter using a token bucket.
+type IPLimiter struct {
+	mu       sync.Mutex
+	limiters map[string]*tokenBucket
+	rate     int
+	interval time.Duration
+}
+
+type tokenBucket struct {
+	tokens    int
+	lastTime  time.Time
+	rate      int
+	interval  time.Duration
+}
+
+func NewIPLimiter(rate int, interval time.Duration) *IPLimiter {
+	l := &IPLimiter{
+		limiters: make(map[string]*tokenBucket),
+		rate:     rate,
+		interval: interval,
+	}
+	// Periodically clean up stale entries
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			l.cleanup()
+		}
+	}()
+	return l
+}
+
+func (l *IPLimiter) Allow(ip string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	b, ok := l.limiters[ip]
+	if !ok {
+		b = &tokenBucket{tokens: l.rate - 1, lastTime: time.Now(), rate: l.rate, interval: l.interval}
+		l.limiters[ip] = b
+		return true
+	}
+
+	elapsed := time.Since(b.lastTime)
+	b.tokens += int(elapsed / b.interval)
+	if b.tokens > b.rate {
+		b.tokens = b.rate
+	}
+	b.lastTime = time.Now()
+
+	if b.tokens <= 0 {
+		return false
+	}
+	b.tokens--
+	return true
+}
+
+func (l *IPLimiter) cleanup() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for ip, b := range l.limiters {
+		if time.Since(b.lastTime) > 5*time.Minute {
+			delete(l.limiters, ip)
+		}
+	}
 }
 
 func unique(slice []string) []string {

@@ -201,7 +201,7 @@ func (c *Client) doGet(ctx context.Context, endpoint string) ([]byte, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024))
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("gitea %s: %d %s", endpoint, resp.StatusCode, string(body[:min(len(body), 200)]))
 	}
@@ -236,7 +236,7 @@ func (c *Client) doMethod(ctx context.Context, method, endpoint string, payload 
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024))
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("gitea %s %s: %d %s", method, endpoint, resp.StatusCode, string(body[:min(len(body), 200)]))
 	}

@@ -57,6 +57,10 @@ func (h *Handler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if req.Type != "" && !isValidNoteType(req.Type) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid note type, allowed: note, daily, source, project"})
+		return
+	}
 	n, err := h.svc.Create(c.Request.Context(), req)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to create note")
@@ -103,6 +107,10 @@ func (h *Handler) Update(c *gin.Context) {
 	var req UpdateNoteRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.Type != "" && !isValidNoteType(req.Type) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid note type, allowed: note, daily, source, project"})
 		return
 	}
 	n, err := h.svc.Update(c.Request.Context(), safePath, req)
@@ -157,6 +165,14 @@ func (h *Handler) History(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"commits": commits})
 }
 
+func isValidNoteType(t string) bool {
+	switch NoteType(t) {
+	case TypeNote, TypeDaily, TypeSource, TypeProject:
+		return true
+	}
+	return false
+}
+
 func (h *Handler) indexNote(n *Note) {
 	if h.indexer == nil || n == nil {
 		return
@@ -177,6 +193,7 @@ func (h *Handler) indexNote(n *Note) {
 	}
 	if err := h.indexer.UpsertNote(idx); err != nil {
 		// Log but don't fail the request
+		log.Error().Err(err).Str("note_id", n.ID).Msg("failed to index note")
 		return
 	}
 }

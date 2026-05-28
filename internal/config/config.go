@@ -63,7 +63,7 @@ func Load() *Config {
 			Repo:  getEnv("GITEA_REPO", "xuzong/knowledge-vault"),
 		},
 		MySQL: MySQLConfig{
-			DSN: getEnv("MYSQL_DSN", "root:root@tcp(127.0.0.1:3306)/kms?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci"),
+			DSN: getEnv("MYSQL_DSN", ""),
 		},
 		Webhook: WebhookConfig{
 			Secret: getEnv("WEBHOOK_SECRET", ""),
@@ -118,6 +118,12 @@ func loadEnvFile() {
 		}
 		key := strings.TrimSpace(parts[0])
 		val := strings.TrimSpace(parts[1])
+		// Strip surrounding single or double quotes
+		if len(val) >= 2 {
+			if (val[0] == '\'' && val[len(val)-1] == '\'') || (val[0] == '"' && val[len(val)-1] == '"') {
+				val = val[1 : len(val)-1]
+			}
+		}
 		// Only set if not already in environment
 		if os.Getenv(key) == "" {
 			os.Setenv(key, val)
