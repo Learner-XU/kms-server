@@ -5,17 +5,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
-
-	"kms-server/internal/search"
 )
 
 type Handler struct {
-	svc     *Service
-	indexer *search.Indexer
+	svc *Service
 }
 
-func NewHandler(svc *Service, indexer *search.Indexer) *Handler {
-	return &Handler{svc: svc, indexer: indexer}
+func NewHandler(svc *Service) *Handler {
+	return &Handler{svc: svc}
 }
 
 func (h *Handler) RegisterRoutes(r *gin.RouterGroup) {
@@ -33,7 +30,7 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup) {
 func (h *Handler) List(c *gin.Context) {
 	dir := c.Query("dir")
 	if dir != "" {
-		if err := validatePathSegment(dir); err != nil {
+		if _, err := sanitizePath(dir); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid dir parameter"})
 			return
 		}
@@ -53,7 +50,7 @@ func (h *Handler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := validatePathSegment(req.Path); err != nil {
+	if _, err := sanitizePath(req.Path); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -68,7 +65,7 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 	// Auto-index
-	h.indexNote(n)
+	h.svc.IndexNote(n)
 	c.JSON(http.StatusCreated, n)
 }
 
@@ -120,7 +117,7 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 	// Auto-index
-	h.indexNote(n)
+	h.svc.IndexNote(n)
 	c.JSON(http.StatusOK, n)
 }
 
@@ -171,17 +168,4 @@ func isValidNoteType(t string) bool {
 		return true
 	}
 	return false
-}
-
-func (h *Handler) indexNote(n *Note) {
-	if h.indexer == nil || n == nil {
-		return
-	}
-	idx := search.NewIndexedNote(n.ID, n.Path, n.Title, n.Content,
-		string(n.Type), string(n.Status), n.Tags, n.Summary, n.Source, n.SHA, n.Created, n.Updated)
-	if err := h.indexer.UpsertNote(idx); err != nil {
-		// Log but don't fail the request
-		log.Error().Err(err).Str("note_id", n.ID).Msg("failed to index note")
-		return
-	}
 }

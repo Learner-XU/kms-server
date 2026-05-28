@@ -62,12 +62,7 @@ func ReindexAll(giteaClient *gitea.Client, noteSvc *note.Service, indexer *searc
 			if !ok {
 				continue // unresolved link
 			}
-			// Insert link edge directly
-			_, err := indexer.DB().Exec(`
-				INSERT IGNORE INTO links (source_id, target_id, target_title, context)
-				VALUES (?, ?, ?, '')
-			`, ni.note.ID, targetID, linkTitle)
-			if err != nil {
+			if err := indexer.InsertLink(ni.note.ID, targetID, linkTitle); err != nil {
 				log.Error().Str("from", ni.note.Title).Str("to", linkTitle).Err(err).Msg("reindex: link insert failed")
 			}
 		}

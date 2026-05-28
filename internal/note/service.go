@@ -2,7 +2,6 @@ package note
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -15,26 +14,6 @@ import (
 	"kms-server/pkg/id"
 	"kms-server/pkg/markdown"
 )
-
-// validatePathSegment checks a path segment for traversal attacks.
-func validatePathSegment(path string) error {
-	if path == "" {
-		return nil
-	}
-	if strings.Contains(path, "\x00") {
-		return fmt.Errorf("invalid path: contains null byte")
-	}
-	if strings.HasPrefix(path, "/") {
-		return fmt.Errorf("invalid path: must not start with /")
-	}
-	parts := strings.Split(path, "/")
-	for _, part := range parts {
-		if part == ".." {
-			return fmt.Errorf("invalid path: contains .. traversal")
-		}
-	}
-	return nil
-}
 
 // sanitizePath validates a note path for traversal attacks.
 // It does NOT add a prefix - the caller is responsible for ensuring
@@ -63,12 +42,8 @@ type Service struct {
 	indexer *search.Indexer
 }
 
-func NewService(giteaClient *gitea.Client) *Service {
-	return &Service{gitea: giteaClient}
-}
-
-func (s *Service) SetIndexer(idx *search.Indexer) {
-	s.indexer = idx
+func NewService(giteaClient *gitea.Client, indexer *search.Indexer) *Service {
+	return &Service{gitea: giteaClient, indexer: indexer}
 }
 
 func (s *Service) Get(ctx context.Context, path string) (*Note, error) {
@@ -305,45 +280,33 @@ func (s *Service) GetHistory(ctx context.Context, path string) ([]gitea.CommitIn
 }
 
 func (s *Service) listFromIndex(dirPath string) ([]*Note, error) {
-	db := s.indexer.DB()
-	query := "SELECT id, path, title, content, type, status, tags, summary, source, sha, created, updated FROM notes"
-	var args []interface{}
-	if dirPath != "" {
-		query += " WHERE path LIKE ?"
-		args = append(args, dirPath+"/%")
-	}
-	query += " ORDER BY updated DESC"
-
-	rows, err := db.Query(query, args...)
+	indexed, err := s.indexer.ListByDir(dirPath)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	notes := make([]*Note, 0)
-	for rows.Next() {
-		var n Note
-		var tagsJSON string
-		var created, updated time.Time
-		if err := rows.Scan(&n.ID, &n.Path, &n.Title, &n.Content, &n.Type, &n.Status,
-			&tagsJSON, &n.Summary, &n.Source, &n.SHA, &created, &updated); err != nil {
-			return nil, err
-		}
-		if err := json.Unmarshal([]byte(tagsJSON), &n.Tags); err != nil {
-			n.Tags = []string{}
-		}
-		if n.Tags == nil {
-			n.Tags = []string{}
-		}
-		n.Created = created
-		n.Updated = updated
-		n.Backlinks = []string{}
-		notes = append(notes, &n)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
+	notes := make([]*Note, 0, len(indexed))
+	for _, n := range indexed {
+		notes = append(notes, &Note{
+			ID: n.ID, Path: n.Path, Title: n.Title, Content: n.Content,
+			Type: NoteType(n.Type), Status: NoteStatus(n.Status),
+			Tags: n.Tags, Summary: n.Summary, Source: n.Source, SHA: n.SHA,
+			Created: n.Created, Updated: n.Updated,
+			Backlinks: []string{},
+		})
 	}
 	return notes, nil
+}
+
+// IndexNote indexes a note in MySQL. Called after Create/Update.
+func (s *Service) IndexNote(n *Note) {
+	if s.indexer == nil || n == nil {
+		return
+	}
+	idx := search.NewIndexedNote(n.ID, n.Path, n.Title, n.Content,
+		string(n.Type), string(n.Status), n.Tags, n.Summary, n.Source, n.SHA, n.Created, n.Updated)
+	if err := s.indexer.UpsertNote(idx); err != nil {
+		log.Error().Err(err).Str("note_id", n.ID).Msg("failed to index note")
+	}
 }
 
 func appendUnique(slice []string, item string) []string {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/rs/zerolog/log"
 )
 
 type Indexer struct {
@@ -299,8 +300,57 @@ func (idx *Indexer) GetBacklinks(noteID string) ([]SearchResult, error) {
 	return results, nil
 }
 
-func (idx *Indexer) DB() *sql.DB {
+// RawDB returns the underlying database connection.
+// Deprecated: prefer adding methods to Indexer instead of direct DB access.
+// Currently only used by graph.Builder which queries notes+links jointly.
+func (idx *Indexer) RawDB() *sql.DB {
 	return idx.db
+}
+
+// InsertLink inserts a link edge between two notes.
+func (idx *Indexer) InsertLink(sourceID, targetID, targetTitle string) error {
+	_, err := idx.db.Exec(`INSERT IGNORE INTO links (source_id, target_id, target_title, context) VALUES (?, ?, ?, '')`,
+		sourceID, targetID, targetTitle)
+	return err
+}
+
+// ListByDir returns all indexed notes under a directory path.
+// If dirPath is empty, returns all notes.
+func (idx *Indexer) ListByDir(dirPath string) ([]*IndexedNote, error) {
+	query := "SELECT id, path, title, content, type, status, tags, summary, source, sha, created, updated FROM notes"
+	var args []interface{}
+	if dirPath != "" {
+		query += " WHERE path LIKE ?"
+		args = append(args, dirPath+"/%")
+	}
+	query += " ORDER BY updated DESC"
+
+	rows, err := idx.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	notes := make([]*IndexedNote, 0)
+	for rows.Next() {
+		var n IndexedNote
+		var tagsJSON string
+		if err := rows.Scan(&n.ID, &n.Path, &n.Title, &n.Content, &n.Type, &n.Status,
+			&tagsJSON, &n.Summary, &n.Source, &n.SHA, &n.Created, &n.Updated); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(tagsJSON), &n.Tags); err != nil {
+			n.Tags = []string{}
+		}
+		if n.Tags == nil {
+			n.Tags = []string{}
+		}
+		notes = append(notes, &n)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return notes, nil
 }
 
 // TagInfo represents a tag with its count
@@ -361,7 +411,9 @@ func (idx *Indexer) GetStats() (*Stats, error) {
 	}
 
 	// Total notes
-	idx.db.QueryRow("SELECT COUNT(*) FROM notes").Scan(&stats.TotalNotes)
+	if err := idx.db.QueryRow("SELECT COUNT(*) FROM notes").Scan(&stats.TotalNotes); err != nil {
+		return nil, fmt.Errorf("count notes: %w", err)
+	}
 
 	// By type
 	rows, err := idx.db.Query("SELECT type, COUNT(*) FROM notes GROUP BY type")
@@ -370,7 +422,10 @@ func (idx *Indexer) GetStats() (*Stats, error) {
 		for rows.Next() {
 			var t string
 			var c int
-			rows.Scan(&t, &c)
+			if err := rows.Scan(&t, &c); err != nil {
+				log.Error().Err(err).Msg("stats: scan type")
+				continue
+			}
 			stats.ByType[t] = c
 		}
 	}
@@ -382,13 +437,16 @@ func (idx *Indexer) GetStats() (*Stats, error) {
 		for rows2.Next() {
 			var s string
 			var c int
-			rows2.Scan(&s, &c)
+			if err := rows2.Scan(&s, &c); err != nil {
+				log.Error().Err(err).Msg("stats: scan status")
+				continue
+			}
 			stats.ByStatus[s] = c
 		}
 	}
 
 	// Tag count
-	idx.db.QueryRow(`
+	_ = idx.db.QueryRow(`
 		SELECT COUNT(DISTINCT tag) FROM (
 			SELECT JSON_UNQUOTE(JSON_EXTRACT(tags, CONCAT('$[', n.n, ']'))) as tag
 			FROM notes
@@ -401,7 +459,9 @@ func (idx *Indexer) GetStats() (*Stats, error) {
 
 	// Link count
 	var linkCount int
-	idx.db.QueryRow("SELECT COUNT(*) FROM links").Scan(&linkCount)
+	if err := idx.db.QueryRow("SELECT COUNT(*) FROM links").Scan(&linkCount); err != nil {
+		log.Error().Err(err).Msg("stats: count links")
+	}
 	stats.LinkCount = linkCount
 
 	// Recent notes
@@ -414,7 +474,10 @@ func (idx *Indexer) GetStats() (*Stats, error) {
 		for recentRows.Next() {
 			var r SearchResult
 			var tagsJSON string
-			recentRows.Scan(&r.ID, &r.Path, &r.Title, &r.Type, &r.Status, &tagsJSON, &r.Summary)
+			if err := recentRows.Scan(&r.ID, &r.Path, &r.Title, &r.Type, &r.Status, &tagsJSON, &r.Summary); err != nil {
+				log.Error().Err(err).Msg("stats: scan recent")
+				continue
+			}
 			json.Unmarshal([]byte(tagsJSON), &r.Tags)
 			if r.Tags == nil {
 				r.Tags = []string{}

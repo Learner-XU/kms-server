@@ -38,16 +38,15 @@ func main() {
 	}
 
 	// Services
-	noteSvc := note.NewService(giteaClient)
-	noteSvc.SetIndexer(indexer)
-	graphBuilder := graph.NewBuilder(indexer.DB())
+	noteSvc := note.NewService(giteaClient, indexer)
+	graphBuilder := graph.NewBuilder(indexer.RawDB())
 
 	// Auth
 	authSvc := auth.NewService(db, cfg.JWTSecret)
 	authHandler := auth.NewHandler(authSvc)
 
 	// Handlers
-	noteHandler := note.NewHandler(noteSvc, indexer)
+	noteHandler := note.NewHandler(noteSvc)
 	searchHandler := search.NewHandler(indexer)
 	graphHandler := graph.NewHandler(graphBuilder)
 	issueHandler := issuePkg.NewHandler(giteaClient)
