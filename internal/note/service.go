@@ -114,6 +114,7 @@ func (s *Service) Get(ctx context.Context, path string) (*Note, error) {
 		Status:  NoteStatus(fm.Status),
 		Source:  fm.Source,
 		Links:   links,
+		Backlinks: []string{},
 		Summary: fm.Summary,
 		SHA:     file.SHA,
 	}
@@ -336,6 +337,7 @@ func (s *Service) listFromIndex(dirPath string) ([]*Note, error) {
 		}
 		n.Created = created
 		n.Updated = updated
+		n.Backlinks = []string{}
 		notes = append(notes, &n)
 	}
 	if err := rows.Err(); err != nil {

@@ -167,7 +167,7 @@ func (c *Client) GetFileHistory(ctx context.Context, path string, page, limit in
 	if err != nil {
 		return nil, err
 	}
-	var commits []CommitInfo
+	commits := make([]CommitInfo, 0)
 	if err := json.Unmarshal(body, &commits); err != nil {
 		return nil, err
 	}

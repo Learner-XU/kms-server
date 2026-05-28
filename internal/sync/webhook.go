@@ -230,7 +230,7 @@ func (l *IPLimiter) cleanup() {
 
 func unique(slice []string) []string {
 	seen := make(map[string]bool)
-	var result []string
+	result := make([]string, 0)
 	for _, s := range slice {
 		if !seen[s] {
 			seen[s] = true
