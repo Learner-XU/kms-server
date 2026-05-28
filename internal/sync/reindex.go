@@ -40,20 +40,7 @@ func ReindexAll(giteaClient *gitea.Client, noteSvc *note.Service, indexer *searc
 			continue
 		}
 
-		idx := &search.IndexedNote{
-			ID:      n.ID,
-			Path:    n.Path,
-			Title:   n.Title,
-			Content: n.Content,
-			Type:    string(n.Type),
-			Status:  string(n.Status),
-			Tags:    n.Tags,
-			Summary: n.Summary,
-			Source:  n.Source,
-			SHA:     n.SHA,
-			Created: n.Created,
-			Updated: n.Updated,
-		}
+		idx := search.NewIndexedNote(n.ID, n.Path, n.Title, n.Content, string(n.Type), string(n.Status), n.Tags, n.Summary, n.Source, n.SHA, n.Created, n.Updated)
 
 		if err := indexer.UpsertNote(idx); err != nil {
 			log.Error().Str("path", path).Err(err).Msg("reindex: upsert failed")

@@ -174,21 +174,7 @@ func (c *Client) GetFileHistory(ctx context.Context, path string, page, limit in
 	return commits, nil
 }
 
-func (c *Client) CreateIssue(ctx context.Context, title, body string, labels []string) error {
-	payload := map[string]interface{}{
-		"title":  title,
-		"body":   body,
-		"labels": labels,
-	}
-	endpoint := fmt.Sprintf("/api/v1/repos/%s/issues", encodeRepo(c.repo))
-	_, err := c.doPost(ctx, endpoint, payload)
-	return err
-}
-
-func (c *Client) ListIssues(ctx context.Context, state string) (json.RawMessage, error) {
-	endpoint := fmt.Sprintf("/api/v1/repos/%s/issues?state=%s", encodeRepo(c.repo), state)
-	return c.doGet(ctx, endpoint)
-}
+// Issue methods moved to issue.go
 
 func (c *Client) doGet(ctx context.Context, endpoint string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+endpoint, nil)

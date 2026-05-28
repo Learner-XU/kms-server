@@ -36,6 +36,17 @@ type LinkRef struct {
 	Context     string
 }
 
+// NewIndexedNote creates an IndexedNote from individual fields.
+// Centralizes the Note→IndexedNote mapping to avoid duplication.
+func NewIndexedNote(id, path, title, content, noteType, status string, tags []string, summary, source, sha string, created, updated time.Time) *IndexedNote {
+	return &IndexedNote{
+		ID: id, Path: path, Title: title, Content: content,
+		Type: noteType, Status: status, Tags: tags,
+		Summary: summary, Source: source, SHA: sha,
+		Created: created, Updated: updated,
+	}
+}
+
 type SearchResult struct {
 	ID      string   `json:"id"`
 	Title   string   `json:"title"`
@@ -52,26 +63,6 @@ type SearchFilters struct {
 	Type   string
 	Status string
 	Tags   []string
-}
-
-func NewIndexer(dsn string) (*Indexer, error) {
-	db, err := sql.Open("mysql", dsn)
-	if err != nil {
-		return nil, err
-	}
-	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(5 * time.Minute)
-
-	if err := db.Ping(); err != nil {
-		return nil, fmt.Errorf("ping mysql: %w", err)
-	}
-
-	if err := migrate(db); err != nil {
-		return nil, err
-	}
-
-	return &Indexer{db: db}, nil
 }
 
 // NewIndexerWithDB creates an Indexer with an existing database connection.
@@ -322,12 +313,12 @@ type TagInfo struct {
 func (idx *Indexer) GetTags() ([]TagInfo, error) {
 	rows, err := idx.db.Query(`
 		SELECT DISTINCT tag, COUNT(*) as cnt FROM (
-			SELECT JSON_UNQUOTE(JSON_EXTRACT(tags_json, CONCAT('$[', n.n, ']'))) as tag
+			SELECT JSON_UNQUOTE(JSON_EXTRACT(tags, CONCAT('$[', n.n, ']'))) as tag
 			FROM notes
 			JOIN (SELECT 0 n UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4
 			      UNION SELECT 5 UNION SELECT 6 UNION SELECT 7 UNION SELECT 8 UNION SELECT 9) n
-			ON n.n < JSON_LENGTH(tags_json)
-			WHERE tags_json IS NOT NULL AND tags_json != '[]'
+			ON n.n < JSON_LENGTH(tags)
+			WHERE tags IS NOT NULL AND tags != '[]'
 		) t
 		WHERE tag IS NOT NULL AND tag != ''
 		GROUP BY tag
@@ -399,12 +390,12 @@ func (idx *Indexer) GetStats() (*Stats, error) {
 	// Tag count
 	idx.db.QueryRow(`
 		SELECT COUNT(DISTINCT tag) FROM (
-			SELECT JSON_UNQUOTE(JSON_EXTRACT(tags_json, CONCAT('$[', n.n, ']'))) as tag
+			SELECT JSON_UNQUOTE(JSON_EXTRACT(tags, CONCAT('$[', n.n, ']'))) as tag
 			FROM notes
 			JOIN (SELECT 0 n UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4
 			      UNION SELECT 5 UNION SELECT 6 UNION SELECT 7 UNION SELECT 8 UNION SELECT 9) n
-			ON n.n < JSON_LENGTH(tags_json)
-			WHERE tags_json IS NOT NULL AND tags_json != '[]'
+			ON n.n < JSON_LENGTH(tags)
+			WHERE tags IS NOT NULL AND tags != '[]'
 		) t WHERE tag IS NOT NULL AND tag != ''
 	`).Scan(&stats.TagCount)
 
@@ -415,7 +406,7 @@ func (idx *Indexer) GetStats() (*Stats, error) {
 
 	// Recent notes
 	recentRows, err := idx.db.Query(`
-		SELECT id, path, title, note_type, status, tags_json, COALESCE(summary, '')
+		SELECT id, path, title, type, status, tags, COALESCE(summary, '')
 		FROM notes ORDER BY updated DESC LIMIT 5
 	`)
 	if err == nil {

@@ -131,20 +131,7 @@ func (h *WebhookHandler) reindexFiles(files []string) {
 			continue
 		}
 
-		indexed := &search.IndexedNote{
-			ID:      n.ID,
-			Path:    n.Path,
-			Title:   n.Title,
-			Content: n.Content,
-			Type:    string(n.Type),
-			Status:  string(n.Status),
-			Tags:    n.Tags,
-			Summary: n.Summary,
-			Source:  n.Source,
-			SHA:     n.SHA,
-			Created: n.Created,
-			Updated: n.Updated,
-		}
+		indexed := search.NewIndexedNote(n.ID, n.Path, n.Title, n.Content, string(n.Type), string(n.Status), n.Tags, n.Summary, n.Source, n.SHA, n.Created, n.Updated)
 
 		if err := h.indexer.UpsertNote(indexed); err != nil {
 			log.Error().Str("path", f).Err(err).Msg("reindex failed")
