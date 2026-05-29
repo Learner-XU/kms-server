@@ -33,15 +33,14 @@
 [GIN-debug] PUT    /api/profiles/:username   --> kms-server/internal/profile.(*Handler).Update-fm (5 handlers)
 [GIN-debug] GET    /api/published            --> kms-server/internal/publish.(*Handler).List-fm (5 handlers)
 [GIN-debug] GET    /api/published/:slug      --> kms-server/internal/publish.(*Handler).Get-fm (5 handlers)
-[GIN-debug] GET    /api/publish/:path        --> kms-server/internal/publish.(*Handler).Check-fm (5 handlers)
-[GIN-debug] POST   /api/publish/:path        --> kms-server/internal/publish.(*Handler).Publish-fm (5 handlers)
-[GIN-debug] DELETE /api/publish/:path        --> kms-server/internal/publish.(*Handler).Unpublish-fm (5 handlers)
+[GIN-debug] GET    /api/publish/*path        --> kms-server/internal/publish.(*Handler).Check-fm (5 handlers)
+[GIN-debug] POST   /api/publish/*path        --> kms-server/internal/publish.(*Handler).Publish-fm (5 handlers)
+[GIN-debug] DELETE /api/publish/*path        --> kms-server/internal/publish.(*Handler).Unpublish-fm (5 handlers)
 [GIN-debug] POST   /webhooks/gitea           --> kms-server/internal/sync.(*WebhookHandler).Handle-fm (5 handlers)
 [GIN-debug] GET    /health                   --> main.main.func1 (5 handlers)
-[90m10:07AM[0m [32mINF[0m [1mKMS server starting[0m [36maddr=[0m:8000
+[90m10:13AM[0m [32mINF[0m [1mKMS server starting[0m [36maddr=[0m:8000
 [GIN-debug] [WARNING] You trusted all proxies, this is NOT safe. We recommend you to set a value.
 Please check https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-proxies for details.
 [GIN-debug] Listening and serving HTTP on :8000
-[90m10:07AM[0m [33mWRN[0m [1mreindex: skip[0m [36merror=[0m[31m[1m"no frontmatter in README"[0m[0m [36mpath=[0mREADME
-[90m10:07AM[0m [32mINF[0m [1mstartup reindex complete[0m [36mnotes=[0m4
-[GIN] 2026/05/29 - 10:07:54 | 200 |     907.458µs |             ::1 | GET      "/api/published"
+[90m10:13AM[0m [33mWRN[0m [1mreindex: skip[0m [36merror=[0m[31m[1m"no frontmatter in README"[0m[0m [36mpath=[0mREADME
+[90m10:13AM[0m [32mINF[0m [1mstartup reindex complete[0m [36mnotes=[0m4

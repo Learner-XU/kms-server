@@ -26,10 +26,10 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup) {
 		pub.GET("", h.List)
 		pub.GET("/:slug", h.Get)
 	}
-	// Publish/unpublish are on separate routes (can't conflict with notes/*path)
-	r.GET("/publish/:path", h.Check)
-	r.POST("/publish/:path", h.Publish)
-	r.DELETE("/publish/:path", h.Unpublish)
+	// Publish/unpublish — use *path to match paths with slashes
+	r.GET("/publish/*path", h.Check)
+	r.POST("/publish/*path", h.Publish)
+	r.DELETE("/publish/*path", h.Unpublish)
 }
 
 // List returns all published notes. Public.
