@@ -64,6 +64,10 @@ func (m *JWTManager) GenerateRefreshToken(user *User) (string, string, error) {
 	return signed, jti, err
 }
 
+func (m *JWTManager) AccessExpirySeconds() int64 {
+	return int64(m.accessExpiry.Seconds())
+}
+
 func (m *JWTManager) RefreshExpiry() time.Duration {
 	return m.refreshExpiry
 }

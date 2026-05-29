@@ -186,7 +186,7 @@ func (s *Service) GenerateTokenPair(user *User) (*TokenResponse, error) {
 	return &TokenResponse{
 		AccessToken:  access,
 		RefreshToken: refresh,
-		ExpiresIn:    7200,
+		ExpiresIn:    s.jwtManager.AccessExpirySeconds(),
 		User:         *user,
 	}, nil
 }
