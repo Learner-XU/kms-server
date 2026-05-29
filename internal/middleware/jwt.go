@@ -51,6 +51,7 @@ func isPublicPath(path string) bool {
 		"/api/auth/refresh",
 		"/webhooks",
 		"/api/profiles",
+		"/api/published",
 	}
 	for _, p := range publicPaths {
 		if strings.HasPrefix(path, p) {
