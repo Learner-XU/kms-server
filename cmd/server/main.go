@@ -14,6 +14,7 @@ import (
 	issuePkg "kms-server/internal/issue"
 	"kms-server/internal/middleware"
 	"kms-server/internal/note"
+	profilePkg "kms-server/internal/profile"
 	"kms-server/internal/search"
 	"kms-server/internal/sync"
 )
@@ -52,6 +53,13 @@ func main() {
 	issueHandler := issuePkg.NewHandler(giteaClient)
 	webhookHandler := sync.NewWebhookHandler(cfg.Webhook.Secret, giteaClient, noteSvc, indexer)
 
+	// Profile
+	profileStore, err := profilePkg.NewStore(db)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to init profile store")
+	}
+	profileHandler := profilePkg.NewHandler(profileStore)
+
 	// Startup reindex — scan all .md files and populate MySQL
 	go sync.ReindexAll(giteaClient, noteSvc, indexer)
 
@@ -67,6 +75,7 @@ func main() {
 		searchHandler.RegisterRoutes(api)
 		graphHandler.RegisterRoutes(api)
 		issueHandler.RegisterRoutes(api)
+		profileHandler.RegisterRoutes(api)
 	}
 
 	// C-1: RBAC — admin-only management routes can be added here.
