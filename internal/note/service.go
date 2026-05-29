@@ -251,9 +251,7 @@ func (s *Service) List(ctx context.Context, dirPath string) ([]*Note, error) {
 		if err == nil {
 			return notes, nil
 		}
-		if err != nil {
-			log.Warn().Err(err).Msg("failed to list from index, falling back to gitea")
-		}
+		log.Warn().Err(err).Msg("failed to list from index, falling back to gitea")
 	}
 	entries, err := s.gitea.ListTree(ctx, dirPath, true)
 	if err != nil {

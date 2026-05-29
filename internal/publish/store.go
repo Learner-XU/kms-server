@@ -3,6 +3,7 @@ package publish
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 )
 
@@ -61,7 +62,7 @@ func (s *Store) GetBySlug(slug string) (*Published, error) {
 		"SELECT slug, note_path, username, nickname, title, summary, tags, published_at FROM published WHERE slug = ?", slug,
 	).Scan(&p.Slug, &p.NotePath, &p.Username, &p.Nickname, &p.Title, &p.Summary, &tagsJSON, &p.PublishedAt)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, err
@@ -80,7 +81,7 @@ func (s *Store) GetByNotePath(notePath string) (*Published, error) {
 		"SELECT slug, note_path, username, nickname, title, summary, tags, published_at FROM published WHERE note_path = ?", notePath,
 	).Scan(&p.Slug, &p.NotePath, &p.Username, &p.Nickname, &p.Title, &p.Summary, &tagsJSON, &p.PublishedAt)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, err

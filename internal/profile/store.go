@@ -2,6 +2,7 @@ package profile
 
 import (
 	"database/sql"
+	"errors"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -39,7 +40,7 @@ func (s *Store) Get(username string) (*Profile, error) {
 	err := s.db.QueryRow("SELECT data, updated_at FROM profiles WHERE username = ?", username).
 		Scan(&dataJSON, &updatedAt)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil // not found — return empty profile
 		}
 		return nil, err

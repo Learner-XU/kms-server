@@ -2,6 +2,7 @@ package search
 
 import (
 	"database/sql"
+	"errors"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -172,15 +173,19 @@ func (idx *Indexer) DeleteNote(path string) error {
 	var noteID string
 	err = tx.QueryRow(`SELECT id FROM notes WHERE path = ?`, path).Scan(&noteID)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil // already gone from index
 		}
 		return err
 	}
 
 	// Delete links referencing this note
-	_, _ = tx.Exec(`DELETE FROM links WHERE source_id = ?`, noteID)
-	_, _ = tx.Exec(`DELETE FROM links WHERE target_id = ?`, noteID)
+	if _, err := tx.Exec(`DELETE FROM links WHERE source_id = ?`, noteID); err != nil {
+		return fmt.Errorf("delete outgoing links: %w", err)
+	}
+	if _, err := tx.Exec(`DELETE FROM links WHERE target_id = ?`, noteID); err != nil {
+		return fmt.Errorf("delete incoming links: %w", err)
+	}
 
 	// Delete the note itself
 	_, err = tx.Exec(`DELETE FROM notes WHERE id = ?`, noteID)
@@ -256,7 +261,9 @@ func (idx *Indexer) Search(query string, filters SearchFilters, limit, offset in
 			&tagsJSON, &r.Summary, &r.Snippet, &r.Score); err != nil {
 			return nil, 0, err
 		}
-		json.Unmarshal([]byte(tagsJSON), &r.Tags)
+		if err := json.Unmarshal([]byte(tagsJSON), &r.Tags); err != nil {
+			log.Warn().Err(err).Str("noteID", r.ID).Msg("search: unmarshal tags")
+		}
 		if r.Tags == nil {
 			r.Tags = []string{}
 		}
@@ -288,7 +295,9 @@ func (idx *Indexer) GetBacklinks(noteID string) ([]SearchResult, error) {
 		if err := rows.Scan(&r.ID, &r.Path, &r.Title, &r.Type, &r.Status, &tagsJSON, &r.Summary); err != nil {
 			return nil, err
 		}
-		json.Unmarshal([]byte(tagsJSON), &r.Tags)
+		if err := json.Unmarshal([]byte(tagsJSON), &r.Tags); err != nil {
+			log.Warn().Err(err).Str("noteID", r.ID).Msg("backlinks: unmarshal tags")
+		}
 		if r.Tags == nil {
 			r.Tags = []string{}
 		}
@@ -428,6 +437,8 @@ func (idx *Indexer) GetStats() (*Stats, error) {
 			}
 			stats.ByType[t] = c
 		}
+	} else {
+		log.Warn().Err(err).Msg("stats: query by type")
 	}
 
 	// By status
@@ -443,10 +454,12 @@ func (idx *Indexer) GetStats() (*Stats, error) {
 			}
 			stats.ByStatus[s] = c
 		}
+	} else {
+		log.Warn().Err(err).Msg("stats: query by status")
 	}
 
 	// Tag count
-	_ = idx.db.QueryRow(`
+	if err := idx.db.QueryRow(`
 		SELECT COUNT(DISTINCT tag) FROM (
 			SELECT JSON_UNQUOTE(JSON_EXTRACT(tags, CONCAT('$[', n.n, ']'))) as tag
 			FROM notes
@@ -455,7 +468,9 @@ func (idx *Indexer) GetStats() (*Stats, error) {
 			ON n.n < JSON_LENGTH(tags)
 			WHERE tags IS NOT NULL AND tags != '[]'
 		) t WHERE tag IS NOT NULL AND tag != ''
-	`).Scan(&stats.TagCount)
+	`).Scan(&stats.TagCount); err != nil {
+		log.Warn().Err(err).Msg("stats: count tags")
+	}
 
 	// Link count
 	var linkCount int
@@ -478,12 +493,16 @@ func (idx *Indexer) GetStats() (*Stats, error) {
 				log.Error().Err(err).Msg("stats: scan recent")
 				continue
 			}
-			json.Unmarshal([]byte(tagsJSON), &r.Tags)
+			if err := json.Unmarshal([]byte(tagsJSON), &r.Tags); err != nil {
+				log.Warn().Err(err).Str("noteID", r.ID).Msg("stats: unmarshal recent tags")
+			}
 			if r.Tags == nil {
 				r.Tags = []string{}
 			}
 			stats.RecentNotes = append(stats.RecentNotes, r)
 		}
+	} else {
+		log.Warn().Err(err).Msg("stats: query recent notes")
 	}
 	if stats.RecentNotes == nil {
 		stats.RecentNotes = make([]SearchResult, 0)

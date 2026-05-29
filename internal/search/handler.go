@@ -29,6 +29,10 @@ func (h *Handler) Search(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "q parameter required"})
 		return
 	}
+	if len(q) > 500 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "query too long (max 500 characters)"})
+		return
+	}
 
 	filters := SearchFilters{
 		Type:   c.Query("type"),
