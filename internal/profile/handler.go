@@ -72,7 +72,12 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 	// Must be updating own profile
-	if currentUser.(string) != targetUser {
+	curUser, ok := currentUser.(string)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid user context"})
+		return
+	}
+	if curUser != targetUser {
 		c.JSON(http.StatusForbidden, gin.H{"error": "can only edit your own profile"})
 		return
 	}

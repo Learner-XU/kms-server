@@ -44,7 +44,10 @@ func main() {
 	graphBuilder := graph.NewBuilder(indexer.RawDB())
 
 	// Auth
-	authSvc := auth.NewService(db, cfg.JWTSecret)
+	authSvc, err := auth.NewService(db, cfg.JWTSecret)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to init auth service")
+	}
 	authHandler := auth.NewHandler(authSvc)
 
 	// Handlers

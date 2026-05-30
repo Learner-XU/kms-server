@@ -37,6 +37,17 @@ func (h *Handler) List(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
 
+	// Clamp to valid ranges
+	if limit < 1 {
+		limit = 1
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
 	items, total, err := h.store.List(limit, offset)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to list published")
@@ -163,9 +174,16 @@ func (h *Handler) Publish(c *gin.Context) {
 
 	nick := ""
 	if nickname != nil {
-		nick = nickname.(string)
+		if n, ok := nickname.(string); ok {
+			nick = n
+		}
 	}
-	if err := h.store.Publish(slug, notePath, username.(string), nick, n.Title, n.Summary, n.Tags); err != nil {
+	uname, ok := username.(string)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid user context"})
+		return
+	}
+	if err := h.store.Publish(slug, notePath, uname, nick, n.Title, n.Summary, n.Tags); err != nil {
 		log.Error().Err(err).Msg("failed to publish note")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
@@ -195,7 +213,12 @@ func (h *Handler) Unpublish(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not published"})
 		return
 	}
-	if pub.Username != username.(string) {
+	uname, ok := username.(string)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid user context"})
+		return
+	}
+	if pub.Username != uname {
 		c.JSON(http.StatusForbidden, gin.H{"error": "not your note"})
 		return
 	}

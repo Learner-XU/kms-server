@@ -14,17 +14,19 @@ type Service struct {
 	jwtManager *JWTManager
 }
 
-func NewService(db *sql.DB, jwtSecret string) *Service {
+func NewService(db *sql.DB, jwtSecret string) (*Service, error) {
 	svc := &Service{
 		db:         db,
 		jwtManager: NewJWTManager(jwtSecret),
 	}
 	// Ensure refresh_tokens table exists
-	svc.migrateRefreshTokens()
-	return svc
+	if err := svc.migrateRefreshTokens(); err != nil {
+		return nil, fmt.Errorf("migrate refresh_tokens: %w", err)
+	}
+	return svc, nil
 }
 
-func (s *Service) migrateRefreshTokens() {
+func (s *Service) migrateRefreshTokens() error {
 	query := `CREATE TABLE IF NOT EXISTS refresh_tokens (
 		id         BIGINT AUTO_INCREMENT PRIMARY KEY,
 		user_id    BIGINT NOT NULL,
@@ -36,8 +38,9 @@ func (s *Service) migrateRefreshTokens() {
 		INDEX idx_user_revoked (user_id, revoked)
 	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
 	if _, err := s.db.Exec(query); err != nil {
-		panic(fmt.Sprintf("failed to create refresh_tokens table: %v", err))
+		return err
 	}
+	return nil
 }
 
 func (s *Service) Register(req *RegisterRequest) (*User, error) {
@@ -128,12 +131,19 @@ func (s *Service) StoreRefreshToken(userID int64, jti string) error {
 // user, and has not been revoked. If valid, it revokes the old jti and returns
 // true. This implements one-time-use refresh token rotation.
 func (s *Service) ValidateAndRotateRefreshToken(userID int64, jti string) (bool, error) {
+	// Atomic SELECT + UPDATE in a transaction to prevent TOCTOU race
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+
 	var dbUserID int64
 	var revoked bool
 	var expiresAt time.Time
 
-	err := s.db.QueryRow(
-		"SELECT user_id, revoked, expires_at FROM refresh_tokens WHERE jti = ?", jti,
+	err = tx.QueryRow(
+		"SELECT user_id, revoked, expires_at FROM refresh_tokens WHERE jti = ? FOR UPDATE", jti,
 	).Scan(&dbUserID, &revoked, &expiresAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -147,8 +157,17 @@ func (s *Service) ValidateAndRotateRefreshToken(userID int64, jti string) (bool,
 	}
 
 	// Revoke the old token (one-time use)
-	_, err = s.db.Exec("UPDATE refresh_tokens SET revoked = TRUE WHERE jti = ?", jti)
+	result, err := tx.Exec("UPDATE refresh_tokens SET revoked = TRUE WHERE jti = ? AND revoked = FALSE", jti)
 	if err != nil {
+		return false, err
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		// Another concurrent request already revoked it
+		return false, nil
+	}
+
+	if err := tx.Commit(); err != nil {
 		return false, err
 	}
 

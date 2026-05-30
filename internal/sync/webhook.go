@@ -53,7 +53,8 @@ func (h *WebhookHandler) Handle(c *gin.Context) {
 		return
 	}
 	signature := c.GetHeader("X-Gitea-Signature")
-	body, err := io.ReadAll(c.Request.Body)
+	// Limit body to 1MB to prevent OOM
+	body, err := io.ReadAll(io.LimitReader(c.Request.Body, 1<<20))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "read body failed"})
 		return

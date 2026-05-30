@@ -44,16 +44,26 @@ func JWTAuth(jwtManager *auth.JWTManager) gin.HandlerFunc {
 }
 
 func isPublicPath(path string) bool {
-	publicPaths := []string{
-		"/health",
-		"/api/auth/login",
-		"/api/auth/register",
-		"/api/auth/refresh",
-		"/webhooks",
-		"/api/profiles",
-		"/api/published",
+	// Exact-match public endpoints (no prefix matching to avoid auth bypass)
+	exactPaths := map[string]bool{
+		"/health":             true,
+		"/api/auth/login":     true,
+		"/api/auth/register":  true,
+		"/api/auth/refresh":   true,
+		"/api/profiles":       true, // GET list
 	}
-	for _, p := range publicPaths {
+	// Prefix-match with trailing slash — must match a path segment boundary
+	prefixPaths := []string{
+		"/webhooks/",
+		"/api/profiles/",
+		"/api/published/",
+		"/p/",
+	}
+
+	if exactPaths[path] {
+		return true
+	}
+	for _, p := range prefixPaths {
 		if strings.HasPrefix(path, p) {
 			return true
 		}

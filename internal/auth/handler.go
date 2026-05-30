@@ -127,7 +127,12 @@ func (h *Handler) Me(c *gin.Context) {
 		return
 	}
 
-	user, err := h.svc.GetUserByID(userID.(int64))
+	uid, ok := userID.(int64)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid user id type"})
+		return
+	}
+	user, err := h.svc.GetUserByID(uid)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		return

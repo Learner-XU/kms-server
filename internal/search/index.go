@@ -208,7 +208,7 @@ func (idx *Indexer) Search(query string, filters SearchFilters, limit, offset in
 	var likeArgs []interface{}
 	for _, w := range words {
 		likeParts = append(likeParts, "(title LIKE ? OR content LIKE ? OR tags LIKE ? OR summary LIKE ?)")
-		pat := "%" + w + "%"
+		pat := "%" + escapeLike(w) + "%"
 		likeArgs = append(likeArgs, pat, pat, pat, pat)
 	}
 	where := []string{strings.Join(likeParts, " AND ")}
@@ -225,7 +225,7 @@ func (idx *Indexer) Search(query string, filters SearchFilters, limit, offset in
 	}
 	for _, tag := range filters.Tags {
 		where = append(where, "tags LIKE ?")
-		args = append(args, "%"+tag+"%")
+		args = append(args, "%"+escapeLike(tag)+"%")
 	}
 
 	whereClause := strings.Join(where, " AND ")
@@ -509,4 +509,12 @@ func (idx *Indexer) GetStats() (*Stats, error) {
 	}
 
 	return stats, nil
+}
+
+// escapeLike escapes SQL LIKE wildcards (% and _) in user input.
+func escapeLike(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "%", "\\%")
+	s = strings.ReplaceAll(s, "_", "\\_")
+	return s
 }
